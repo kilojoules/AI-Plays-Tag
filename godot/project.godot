@@ -1,0 +1,58 @@
+[gd_resource type="ConfigFile" load_steps=2 format=3]
+
+[application]
+config/name="AI Tag Game"
+run/main_scene="res://scenes/Main.tscn"
+
+[autoload]
+Boot="*res://scripts/boot.gd"
+
+[display]
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1920
+window/size/window_height_override=1080
+window/size/resizable=false
+
+[rendering]
+renderer/rendering_method="forward_plus"
+anti_aliasing/quality/screen_space_aa=1
+anti_aliasing/quality/msaa_3d=2
+
+[input]
+move_forward={
+"deadzone": 0.5,
+"events": [
+{ "type": "InputEventKey", "keycode": 87, "physical_keycode": 87, "echo": false, "pressed": false },
+{ "type": "InputEventKey", "keycode": 4194320, "physical_keycode": 4194320, "echo": false, "pressed": false }
+]
+}
+move_back={
+"deadzone": 0.5,
+"events": [
+{ "type": "InputEventKey", "keycode": 83, "physical_keycode": 83, "echo": false, "pressed": false },
+{ "type": "InputEventKey", "keycode": 4194322, "physical_keycode": 4194322, "echo": false, "pressed": false }
+]
+}
+move_left={
+"deadzone": 0.5,
+"events": [
+{ "type": "InputEventKey", "keycode": 65, "physical_keycode": 65, "echo": false, "pressed": false },
+{ "type": "InputEventKey", "keycode": 4194319, "physical_keycode": 4194319, "echo": false, "pressed": false }
+]
+}
+move_right={
+"deadzone": 0.5,
+"events": [
+{ "type": "InputEventKey", "keycode": 68, "physical_keycode": 68, "echo": false, "pressed": false },
+{ "type": "InputEventKey", "keycode": 4194321, "physical_keycode": 4194321, "echo": false, "pressed": false }
+]
+}
+jump={
+"deadzone": 0.5,
+"events": [ { "type": "InputEventKey", "keycode": 32, "physical_keycode": 32, "echo": false, "pressed": false } ]
+}
+switch_agent={
+"deadzone": 0.5,
+"events": [ { "type": "InputEventKey", "keycode": 9, "physical_keycode": 9, "echo": false, "pressed": false } ]
+}

@@ -1,0 +1,24 @@
+# Pixi environment for AI Tag Game (open-source only)
+
+[project]
+name = "ai-tag-game"
+channels = ["conda-forge", "pytorch"]
+platforms = ["osx-64", "osx-arm64", "linux-64", "win-64"]
+
+[feature.server.dependencies]
+python = "3.11.*"
+websockets = "*"
+numpy = ">=1.24,<2.0"
+matplotlib = "*"
+ffmpeg = "*"
+
+[feature.rl.dependencies]
+pytorch = ">=2.2"
+
+[environments]
+default = { features = ["server"] }
+train = { features = ["server", "rl"] }
+
+[tasks]
+server = "python trainer/server.py"
+train = "python trainer/train_stub.py"

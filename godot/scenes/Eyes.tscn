@@ -1,0 +1,34 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/eyes.gd" id="1_0"]
+[ext_resource type="Material" path="res://materials/eyes_white.tres" id="2_1"]
+[ext_resource type="Material" path="res://materials/eyes_pupil.tres" id="2_2"]
+
+[sub_resource type="SphereMesh" id="2_0"]
+radius = 0.1
+
+[sub_resource type="SphereMesh" id="3_0"]
+radius = 0.05
+
+[node name="Eyes" type="Node3D"]
+script = ExtResource("1_0")
+
+[node name="LeftWhite" type="MeshInstance3D" parent="."]
+mesh = SubResource("2_0")
+translation = Vector3(-0.14, 0.35, 0.45)
+material_override = ExtResource("2_1")
+
+[node name="RightWhite" type="MeshInstance3D" parent="."]
+mesh = SubResource("2_0")
+translation = Vector3(0.14, 0.35, 0.45)
+material_override = ExtResource("2_1")
+
+[node name="LeftPupil" type="MeshInstance3D" parent="."]
+mesh = SubResource("3_0")
+translation = Vector3(-0.14, 0.35, 0.45)
+material_override = ExtResource("2_2")
+
+[node name="RightPupil" type="MeshInstance3D" parent="."]
+mesh = SubResource("3_0")
+translation = Vector3(0.14, 0.35, 0.45)
+material_override = ExtResource("2_2")

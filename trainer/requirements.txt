@@ -1,0 +1,5 @@
+websockets>=10.4
+numpy>=1.24
+torch>=2.0; platform_system != "Darwin" or platform_machine != "arm64"
+torch>=2.0; platform_system == "Darwin" and platform_machine == "arm64" and python_version < "3.12"
+

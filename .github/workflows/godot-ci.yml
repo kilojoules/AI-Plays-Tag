@@ -1,0 +1,18 @@
+name: Godot CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Godot Tests
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.2.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run Godot Headless Tests
+        run: |
+          bash scripts/run_godot_tests.sh

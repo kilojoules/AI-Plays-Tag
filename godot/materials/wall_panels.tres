@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/wall_panels.gdshader" id="1_0"]
+
+[resource]
+shader = ExtResource("1_0")
+shader_parameter/base_color = Color(0.09, 0.1, 0.13, 1)
+shader_parameter/accent_color = Color(0.14, 0.18, 0.24, 1)
+shader_parameter/seam_color = Color(0.03, 0.04, 0.05, 1)
+shader_parameter/panel_scale = 3.5
+shader_parameter/seam_width = 0.03
+shader_parameter/gradient_strength = 0.55
+shader_parameter/sheen_strength = 0.28
+shader_parameter/noise_strength = 0.02

@@ -1,0 +1,16 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/agent_body.gdshader" id="1_0"]
+
+[resource]
+shader = ExtResource("1_0")
+shader_parameter/base_color = Color(0.08, 0.19, 0.32, 1)
+shader_parameter/accent_color = Color(0.32, 0.78, 0.92, 1)
+shader_parameter/rim_color = Color(0.35, 0.82, 1.0, 1)
+shader_parameter/accent_height = 1.8
+shader_parameter/accent_softness = 0.9
+shader_parameter/rim_strength = 0.75
+shader_parameter/rim_power = 2.8
+shader_parameter/emission_strength = 1.8
+shader_parameter/stripe_scale = 2.4
+shader_parameter/stripe_contrast = 0.25
