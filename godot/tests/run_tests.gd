@@ -49,6 +49,7 @@ func _run_all() -> void:
     await _process_steps(3)
     await _test_no_fall_through_floor()
     await _test_walls_block_agents()
+    await _test_observation_vector(world)
     world.queue_free()
 
 func _test_no_fall_through_floor() -> void:
@@ -116,3 +117,31 @@ func _test_walls_block_agents() -> void:
     a.ai_move_input = Vector2(0, 1)
     await _physics_steps(180)
     _assert(a.global_transform.origin.z <= 14.7, "south wall stops agent (z<=14.7), got %f" % a.global_transform.origin.z)
+
+func _test_observation_vector(world: Node) -> void:
+    print("[tests] observation vector sanity")
+    var rlenv: Node = world.get_node_or_null("RLEnv")
+    _assert(rlenv != null, "RLEnv node present")
+    if rlenv == null:
+        return
+    var ag = _find_agents()
+    _assert(ag.size() >= 1, "at least one agent present for observation")
+    if ag.size() == 0:
+        return
+    var obs_variant = rlenv.call("_pack_obs", ag[0])
+    _assert(typeof(obs_variant) == TYPE_ARRAY, "_pack_obs returns Array")
+    if typeof(obs_variant) != TYPE_ARRAY:
+        return
+    var obs: Array = obs_variant
+    var base_count = 12
+    var ray_pairs = 36
+    var expected_len = base_count + ray_pairs * 2
+    _assert(obs.size() == expected_len, "observation length matches expected (%d), got %d" % [expected_len, obs.size()])
+    if obs.size() != expected_len:
+        return
+    for i in range(ray_pairs):
+        var idx = base_count + i * 2
+        var dist_val = float(obs[idx])
+        _assert(dist_val >= 0.0 and dist_val <= 1.0001, "ray distance normalized (0-1), got %f" % dist_val)
+        var mask_val = float(obs[idx + 1])
+        _assert(mask_val == 0.0 or mask_val == 1.0, "ray agent mask is binary, got %f" % mask_val)

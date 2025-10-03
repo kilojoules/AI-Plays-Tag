@@ -7,12 +7,10 @@ Key changes:
 """
 import asyncio
 import json
-import math
 import os
 import random
 import threading
-from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 import websockets
@@ -24,33 +22,6 @@ except Exception:
     torch = None
     PPOAgent = None
     PPOConfig = None
-
-
-@dataclass
-class EnvState:
-    pos: np.ndarray  # (x, z)
-    vel: np.ndarray  # (x, z)
-    is_it: bool
-
-
-def initial_state() -> EnvState:
-    return EnvState(pos=np.zeros(2, dtype=np.float32), vel=np.zeros(2, dtype=np.float32), is_it=False)
-
-
-def obs_from_state(s: EnvState) -> List[float]:
-    return [float(s.pos[0]), float(s.pos[1]), float(s.vel[0]), float(s.vel[1]), 1.0 if s.is_it else 0.0]
-
-
-def step_dynamics(s: EnvState, action: Tuple[float, float, float]) -> EnvState:
-    dx, dz, jump = action
-    acc = np.array([dx, dz], dtype=np.float32)
-    s.vel = 0.85 * s.vel + 0.15 * acc * 5.0
-    s.pos = s.pos + s.vel * 0.1
-    return s
-
-
-def compute_reward(s: EnvState) -> float:
-    return float(np.linalg.norm(s.vel)) * 0.01
 
 
 class Trainer:
@@ -79,11 +50,23 @@ class Trainer:
         self.lock = threading.Lock()
 
     def ensure_policy(self, obs_dim: int, act_dim: int = 3):
-        if self.policy is not None or torch is None or PPOConfig is None or PPOAgent is None:
+        if torch is None or PPOConfig is None or PPOAgent is None:
+            return
+        if self.cfg is not None:
+            if self.cfg.obs_dim != obs_dim or self.cfg.act_dim != act_dim:
+                print(
+                    "Observation/action space changed from"
+                    f" ({self.cfg.obs_dim}, {self.cfg.act_dim}) to ({obs_dim}, {act_dim});"
+                    " reinitialising policy"
+                )
+                self.policy = None
+                self.cfg = None
+                self.buf_obs, self.buf_act, self.buf_rew, self.buf_done = [], [], [], []
+                self.current_ep_rewards = []
+        if self.policy is not None:
             return
         self.cfg = PPOConfig(obs_dim=obs_dim, act_dim=act_dim)
         self.policy = PPOAgent(self.cfg)
-        # Optionally load pre-trained policy unless disabled
         if os.environ.get("DISABLE_POLICY_LOAD", "0").lower() in ("1", "true", "yes"):
             return
         policy_path = os.path.join(os.path.dirname(__file__), "policy.pt")
@@ -135,18 +118,19 @@ class Trainer:
             done = np.array(self.buf_done, dtype=np.bool_)
             self.buf_obs, self.buf_act, self.buf_rew, self.buf_done = [], [], [], []
         try:
-            # Compute value predictions
             with torch.no_grad():
                 v = self.policy.vf(torch.as_tensor(obs, dtype=torch.float32)).squeeze(-1).numpy()
-            # GAE-lambda advantages
             gamma, lam = 0.99, 0.95
             adv = np.zeros_like(rew)
             lastgaelam = 0.0
             for t in reversed(range(len(rew))):
-                nextv = 0.0 if t == len(rew)-1 or done[t] else v[t+1]
+                nextv = 0.0 if t == len(rew) - 1 or done[t] else v[t + 1]
                 delta = rew[t] + gamma * nextv - v[t]
                 lastgaelam = delta + gamma * lam * lastgaelam * (0.0 if done[t] else 1.0)
                 adv[t] = lastgaelam
+            advantages = adv.copy()
+            if advantages.std() > 1e-6:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             ret = adv + v
             # Simple supervised-style PPO update placeholder
             for _ in range(10):
@@ -156,7 +140,7 @@ class Trainer:
                     o = torch.as_tensor(obs[j], dtype=torch.float32)
                     a = torch.as_tensor(act[j], dtype=torch.float32)
                     r = torch.as_tensor(ret[j], dtype=torch.float32)
-                    adv_j = torch.as_tensor(adv[j], dtype=torch.float32)
+                    adv_j = torch.as_tensor(advantages[j], dtype=torch.float32)
                     logits = self.policy.pi(o)
                     pred = torch.tanh(logits)
                     pi_loss = ((pred - a) ** 2 * adv_j.unsqueeze(-1)).mean()
@@ -192,34 +176,22 @@ trainer = Trainer()
 
 
 async def handle(ws: websockets.WebSocketServerProtocol):
-    state = initial_state()
-    await ws.send(json.dumps({"type": "observation", "obs": obs_from_state(state), "info": {}}))
     async for msg in ws:
         try:
             data = json.loads(msg)
         except json.JSONDecodeError:
             continue
         typ = data.get("type")
-        if typ == "reset":
-            state = initial_state()
-            await ws.send(json.dumps({"type": "observation", "obs": obs_from_state(state), "info": {}}))
-        elif typ == "step":
-            action = data.get("action", [0.0, 0.0, 0.0])
-            ax, az, aj = float(action[0]), float(action[1]), float(action[2])
-            state = step_dynamics(state, (ax, az, aj))
-            reward = compute_reward(state)
-            done = False
-            await ws.send(json.dumps({
-                "type": "transition",
-                "obs": obs_from_state(state),
-                "reward": reward,
-                "done": done,
-                "info": {}
-            }))
-        elif typ == "act":
-            obs = data.get("obs", obs_from_state(state))
-            if isinstance(obs, list):
-                trainer.ensure_policy(len(obs), act_dim=3)
+        if typ == "act":
+            obs = data.get("obs")
+            if not isinstance(obs, list):
+                await ws.send(json.dumps({
+                    "type": "action",
+                    "action": [0.0, 0.0, 0.0],
+                    "info": {"error": "invalid_obs"}
+                }))
+                continue
+            trainer.ensure_policy(len(obs), act_dim=3)
             action = trainer.act(obs)
             await ws.send(json.dumps({
                 "type": "action",
@@ -228,11 +200,11 @@ async def handle(ws: websockets.WebSocketServerProtocol):
             }))
         elif typ == "act_batch":
             obs_dict = data.get("obs", {})
-            actions = {}
-            for name in obs_dict.keys():
-                arr = obs_dict[name]
-                if isinstance(arr, list):
-                    trainer.ensure_policy(len(arr), act_dim=3)
+            actions: Dict[str, List[float]] = {}
+            for name, arr in obs_dict.items():
+                if not isinstance(arr, list):
+                    continue
+                trainer.ensure_policy(len(arr), act_dim=3)
                 actions[name] = trainer.act(arr)
             await ws.send(json.dumps({
                 "type": "action_batch",

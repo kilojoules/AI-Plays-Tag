@@ -18,10 +18,11 @@ extends Node
 @export var jump_near_bonus: float = 0.5         # bonus for seeker jump near target
 @export var max_steps_per_episode: int = 800     # safety cap (not used for termination)
 @export var log_trajectories: bool = false
+@export var legacy_act_fallback: bool = false    # send single-agent 'act' requests alongside act_batch
 
 var client: Node = null
 var agents: Array = []
-var last_actions := {}
+var last_actions: Dictionary = {}
 var tick: int = 0
 @export var request_every_n_physics_ticks: int = 2
 var gm: Node = null
@@ -115,8 +116,8 @@ func _physics_process(_delta: float) -> void:
                     # Seekers: close distance and small time penalty
                     rew = progress * distance_reward_scale + seeker_time_penalty
                     # Bonus for jumping near the target to encourage dynamic play
-                    var near_dist := cur_distance
-                    var jumped := false
+                    var near_dist: float = cur_distance
+                    var jumped: bool = false
                     if last_action.has(n):
                         var la: Array = last_action[n]
                         if la.size() >= 3:
@@ -198,31 +199,99 @@ func _request_actions() -> void:
             var obs_arr: Array = _pack_obs(a)
             payload[a.name] = obs_arr
             last_obs[a.name] = obs_arr
+    if training_mode and prev_distance == 0.0 and ai_agent and other_agent:
+        prev_distance = ai_agent.global_transform.origin.distance_to(other_agent.global_transform.origin)
     if payload.size() == 0:
         return
     if client and client.connected:
         # Prefer batch API if server supports it; otherwise fallback per-agent 'act'
         client.send_json({"type": "act_batch", "obs": payload})
-    # Also send individual 'act' for compatibility
-    if client and client.connected and control_ai_for.size() > 0:
-        var agent0: Node = _find_agent_by_name(control_ai_for[0])
-        if agent0:
-            var obs0: Array = _pack_obs(agent0)
-            if training_mode and prev_distance == 0.0 and ai_agent and other_agent:
-                prev_distance = ai_agent.global_transform.origin.distance_to(other_agent.global_transform.origin)
-            client.send_json({"type": "act", "obs": obs0})
+        if legacy_act_fallback and control_ai_for.size() > 0:
+            var agent0: Node = _find_agent_by_name(control_ai_for[0])
+            if agent0:
+                client.send_json({"type": "act", "obs": payload[agent0.name]})
 
 func _pack_obs(a: Node) -> Array:
-    # 8-dim observation: [self_x, self_z, self_vx, self_vz, other_x, other_z, other_vx, other_vz]
+    # Observation mix: normalized position/velocity, relative opponent data, role flags,
+    # forward vector, and ray-cast vision (distance + agent mask per ray).
+    var obs: Array = []
+
     var apos: Vector3 = a.global_transform.origin
     var avel: Vector3 = a.velocity
-    var other := _find_other_agent(a)
-    var opos := Vector3.ZERO
-    var ovel := Vector3.ZERO
+    var other = _find_other_agent(a)
+    var opos: Vector3 = Vector3.ZERO
+    var ovel: Vector3 = Vector3.ZERO
+    var other_is_it: float = 0.0
     if other:
         opos = other.global_transform.origin
         ovel = other.velocity
-    return [apos.x, apos.z, avel.x, avel.z, opos.x, opos.z, ovel.x, ovel.z]
+        var other_flag = other.get("is_it")
+        if typeof(other_flag) == TYPE_BOOL:
+            other_is_it = 1.0 if other_flag else 0.0
+
+    var arena_half: float = 15.0
+    var max_speed: float = 10.0
+
+    obs.append(apos.x / arena_half)
+    obs.append(apos.z / arena_half)
+    obs.append(avel.x / max_speed)
+    obs.append(avel.z / max_speed)
+    obs.append((opos.x - apos.x) / arena_half)
+    obs.append((opos.z - apos.z) / arena_half)
+    obs.append((ovel.x - avel.x) / max_speed)
+    obs.append((ovel.z - avel.z) / max_speed)
+    var self_is_it: float = 0.0
+    var self_flag = a.get("is_it")
+    if typeof(self_flag) == TYPE_BOOL:
+        self_is_it = 1.0 if self_flag else 0.0
+    obs.append(self_is_it)
+    obs.append(other_is_it)
+
+    var forward: Vector3 = -a.global_transform.basis.z
+    if forward.length() > 0.0001:
+        forward = forward.normalized()
+    obs.append(forward.x)
+    obs.append(forward.z)
+
+    var vc: Object = a.get_node_or_null("VisionCaster")
+    var expected_rays: int = 36
+    if vc:
+        var rays_val = vc.get("rays")
+        var rays_type = typeof(rays_val)
+        if rays_type == TYPE_INT or rays_type == TYPE_FLOAT:
+            expected_rays = int(rays_val)
+    if vc and vc.has_method("get_distances") and vc.has_method("get_types"):
+        var dists: PackedFloat32Array = vc.call("get_distances")
+        var types: Array = vc.call("get_types")
+        var ray_count: int = dists.size()
+        if ray_count == 0:
+            var rv = vc.get("rays")
+            var rv_type = typeof(rv)
+            if rv_type == TYPE_INT or rv_type == TYPE_FLOAT:
+                ray_count = int(rv)
+        expected_rays = max(expected_rays, ray_count)
+        var max_dist: float = 1.0
+        var md_val = vc.get("max_distance")
+        var md_type = typeof(md_val)
+        if md_type == TYPE_FLOAT or md_type == TYPE_INT:
+            max_dist = max(0.001, float(md_val))
+        for i in range(ray_count):
+            var dist_norm: float = clamp(float(dists[i]) / max_dist, 0.0, 1.0)
+            obs.append(dist_norm)
+            var t: String = "none"
+            if i < types.size():
+                t = str(types[i])
+            obs.append(1.0 if t == "agent" else 0.0)
+        if ray_count < expected_rays:
+            for _i in range(expected_rays - ray_count):
+                obs.append(1.0)
+                obs.append(0.0)
+    else:
+        for _i in range(expected_rays):
+            obs.append(1.0)
+            obs.append(0.0)
+
+    return obs
 
 func _find_other_agent(a: Node) -> Node:
     for x in agents:
@@ -248,6 +317,10 @@ func _apply_env_overrides() -> void:
     v = OS.get_environment("AI_DISTANCE_REWARD_SCALE")
     if v != "":
         distance_reward_scale = float(v)
+    v = OS.get_environment("AI_LEGACY_ACT_FALLBACK")
+    if v != "":
+        var low4 = v.to_lower()
+        legacy_act_fallback = (low4 == "1" or low4 == "true" or low4 == "yes")
     v = OS.get_environment("AI_SEEKER_TIME_PENALTY")
     if v != "":
         seeker_time_penalty = float(v)
@@ -262,7 +335,7 @@ func _apply_env_overrides() -> void:
         max_steps_per_episode = int(v)
 
 func _get_game_manager() -> Node:
-    var nodes := get_tree().get_nodes_in_group("game_manager")
+    var nodes = get_tree().get_nodes_in_group("game_manager")
     if nodes.size() > 0:
         return nodes[0]
     return null
@@ -312,11 +385,11 @@ func _env_reset() -> void:
         prev_distance = ai_agent.global_transform.origin.distance_to(other_agent.global_transform.origin)
     # Request initial action
     if client and client.connected and ai_agent:
-        var obs := _pack_obs(ai_agent)
+        var obs = _pack_obs(ai_agent)
         last_obs[ai_agent.name] = obs
         client.send_json({"type": "act", "obs": obs})
     # Notify HUD
-    var huds := get_tree().get_nodes_in_group("hud")
+    var huds = get_tree().get_nodes_in_group("hud")
     if huds.size() > 0 and huds[0].has_method("on_episode_reset"):
         huds[0].call_deferred("on_episode_reset")
 
@@ -376,16 +449,16 @@ func _setup_npc_for_other() -> void:
 
 func _open_log() -> void:
     if not log_trajectories:
-        var v := OS.get_environment("AI_LOG_TRAJECTORIES")
+        var v = OS.get_environment("AI_LOG_TRAJECTORIES")
         if v != "":
-            var low := v.to_lower()
+            var low = v.to_lower()
             log_trajectories = (low == "1" or low == "true" or low == "yes")
     if not log_trajectories:
         return
-    var dir := DirAccess.open("user://")
+    var dir = DirAccess.open("user://")
     if dir:
         dir.make_dir_recursive("trajectories")
-    var fname := "user://trajectories/ep_%05d.jsonl" % episode_id
+    var fname = "user://trajectories/ep_%05d.jsonl" % episode_id
     log_file = FileAccess.open(fname, FileAccess.WRITE)
     _log_event({"type":"episode_start","episode": episode_id})
 
@@ -406,7 +479,7 @@ func _log_step(a: Node) -> void:
     var vc: Node = a.get_node_or_null("VisionCaster")
     var pos_y: float = a.global_transform.origin.y
     if pos_y < 0.0:
-        var anomaly := {
+        var anomaly = {
             "type": "physics_anomaly",
             "episode": episode_id,
             "agent": a.name,
@@ -416,7 +489,7 @@ func _log_step(a: Node) -> void:
         if a is CharacterBody3D:
             anomaly["is_on_floor"] = (a as CharacterBody3D).is_on_floor()
         _log_event(anomaly)
-    var entry := {
+    var entry = {
         "type": "step",
         "episode": episode_id,
         "agent": a.name,
