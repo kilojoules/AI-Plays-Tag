@@ -20,7 +20,7 @@ Maintain `REWARD_NOTES.md` to note the current reward strategy and possible pitf
 ### Key Deliverables & Outputs
 The primary outputs of a successful training and evaluation cycle are:
 
-* **`trainer/policy_chaser.pt`**: The saved PyTorch policy network trained specifically for the chaser/seeker role.
+* **`trainer/policy_seeker.pt`**: The saved PyTorch policy network trained specifically for the chaser/seeker role.
 * **`trainer/policy_hider.pt`**: The saved PyTorch policy network trained specifically for the hider/runner role.
 * **`trainer/logs/metrics.csv`**: A CSV file that logs episode-level metrics like reward and episode length to track learning progress.
 * **`charts/*.png`**: PNG images of the learning curves generated from the `metrics.csv` file.
@@ -40,7 +40,7 @@ The primary outputs of a successful training and evaluation cycle are:
     - camera capture is as desired
 2.  **Start Training**: The user initiates a complete training session with a single command, like `bash scripts/train.sh live-seeker`. This script automatically starts the Python training server and launches the Godot simulation in headless mode.
 3.  **Monitor Progress**: The user can monitor the server's console output for training updates and periodically check the `trainer/logs/metrics.csv` file or run `bash scripts/plot_metrics.sh` to visualize learning curves.
-4.  **Evaluate & Record**: Once a satisfactory policy is trained (`trainer/policy.pt`), the user stops the training script and runs `GODOT_BIN=/path/to/Godot bash scripts/record_gui.sh chaser` to launch the Godot GUI and record the agent's performance.
+4.  **Evaluate & Record**: Once a satisfactory policy is trained (`trainer/policy.pt`), the user stops the training script and runs `GODOT_BIN=/path/to/Godot bash scripts/record_gui.sh seeker` to launch the Godot GUI and record the agent's performance.
 5.  **Encode Video**: After closing the Godot window, the user runs `bash scripts/encode_frames.sh` to convert the recorded image frames into a shareable MP4 video.
 
 ---

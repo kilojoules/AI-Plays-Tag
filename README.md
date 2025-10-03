@@ -65,6 +65,7 @@ Recording an Animation (Open-Source)
 Minimal “Learning” Demo
 - Enable `RLEnv.training_mode`, run `pixi run -e train server`, then run the Godot scene. Policy updates online and is saved as `trainer/policy.pt`.
 - Record frames with `recorder.gd` or screen capture; stitch multiple runs to show progression.
+- Role-specific checkpoints are saved as `trainer/policy_seeker.pt` and `trainer/policy_hider.pt`; the debug collector copies both for post-run analysis.
 
 Reward Notes
 - Reward-shaping decisions, open questions, and tuning history live in `REWARD_NOTES.md`. Update it whenever you adjust parameters in `godot/scripts/rl_env.gd`.
@@ -77,6 +78,7 @@ Debug Artifacts
 - `bash scripts/train.sh live-seeker` and `live-hider` now stream Godot/server logs to `debug/<timestamp>/` dirs and automatically snapshot metrics, policies, and encodes.
 - Use `bash scripts/collect_debug_artifacts.sh [dest]` (or `pixi run collect-debug`) to bundle logs manually; pass `--server-log/--godot-log` to add extra files.
 - Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
+- Trainer metrics now track advantage statistics and PPO losses; rerun `pixi run -e train plot` to render the new charts (`advantage_mean.png`, `policy_loss.png`, etc.).
 
 Shell Script (one command training)
 - Use `scripts/train.sh` to orchestrate server and Godot headless:

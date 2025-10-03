@@ -106,7 +106,7 @@ fi
 # Trainer artifacts
 copy_if_exists "$ROOT_DIR/trainer/logs/metrics.csv" "metrics.csv"
 copy_if_exists "$ROOT_DIR/trainer/policy.pt" "policy.pt"
-copy_if_exists "$ROOT_DIR/trainer/policy_chaser.pt" "policy_chaser.pt"
+copy_if_exists "$ROOT_DIR/trainer/policy_seeker.pt" "policy_seeker.pt"
 copy_if_exists "$ROOT_DIR/trainer/policy_hider.pt" "policy_hider.pt"
 copy_dir_if_exists "$ROOT_DIR/trainer/charts" "charts"
 
