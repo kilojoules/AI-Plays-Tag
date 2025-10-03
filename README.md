@@ -20,7 +20,7 @@ Tag Rules
 
 Phase 2 Bridge (Preview)
 - Godot side can be wired to a WebSocket client (`scripts/rl_client.gd`).
-- Python side launches a WebSocket server (`trainer/server.py`) with a simple JSON protocol: reset/step producing observation, reward, done, info.
+- Python side launches a WebSocket server (`trainer/server.py`) that serves `act`/`act_batch` requests and consumes `transition_batch` payloads streamed from Godot.
 - PPO/training scaffolding included (`trainer/ppo.py`) as a starting point.
 
 End-to-End Training with Godot (Live)
@@ -30,6 +30,7 @@ End-to-End Training with Godot (Live)
   - `control_all_agents = true` (both agents are controlled by the policy; they learn together)
   - `ai_is_it = true` or `false` picks which agent starts as "it" on reset (roles still change through tagging).
   - Optional: adjust `step_tick_interval`, `tag_bonus`, `progress_reward_scale`.
+  - Optional: `legacy_act_fallback` sends one-agent `act` requests for older Python bridges (default disabled).
 - Start the training server with PyTorch:
   - `pixi run -e train server`
 - Run the Godot scene `scenes/Main.tscn` and watch the learning progress. The server periodically saves `trainer/policy.pt`.
@@ -38,8 +39,10 @@ Python Environment (Pixi preferred)
 - Why Pixi: pip on Python 3.13 lacks PyTorch wheels; Pixi pins a compatible Python and installs from conda-forge/pytorch channels.
 - Install Pixi (see https://pixi.sh for platform-specific install), then from repo root:
   - `pixi run -e default server`  # runs `trainer/server.py` with Python 3.11, websockets, numpy
-  - `pixi run -e train train`     # trains a toy PPO policy on a stub env and saves `trainer/policy.pt`
   - `pixi run -e train server`    # starts the server and loads `policy.pt` for inference
+  - `pixi run -e train plot`      # regenerate charts from `trainer/logs/metrics.csv`
+  - `pixi run tests`              # headless Godot test suite (uses `scripts/run_godot_tests.sh`)
+  - `pixi run collect-debug`      # gather logs/metrics into `debug/<timestamp>/`
 
 Pip (optional, server-only)
 - If you only need the WebSocket server (no PyTorch), you can also do:
@@ -60,18 +63,30 @@ Recording an Animation (Open-Source)
   - Windows: adjust the `app_userdata` path under `%APPDATA%/Godot/app_userdata/AI Tag Game/frames`.
 
 Minimal “Learning” Demo
-- Option A (live in Godot): enable `RLEnv.training_mode`, run `pixi run -e train server`, then run the Godot scene. Policy updates online and is saved as `trainer/policy.pt`.
-- Option B (offline stub): `pixi run -e train train` to produce a toy `policy.pt`, then `pixi run -e train server` and run Godot to see that policy.
+- Enable `RLEnv.training_mode`, run `pixi run -e train server`, then run the Godot scene. Policy updates online and is saved as `trainer/policy.pt`.
 - Record frames with `recorder.gd` or screen capture; stitch multiple runs to show progression.
+
+Reward Notes
+- Reward-shaping decisions, open questions, and tuning history live in `REWARD_NOTES.md`. Update it whenever you adjust parameters in `godot/scripts/rl_env.gd`.
+
+Additional Docs
+- `docs/trajectory_rendering.md` walks through replay generation with `scripts/render_trajectory.sh` and `Replay.tscn`.
+- `docs/ws_protocol.md` captures the JSON contract between Godot and the Python trainer.
+
+Debug Artifacts
+- `bash scripts/train.sh live-seeker` and `live-hider` now stream Godot/server logs to `debug/<timestamp>/` dirs and automatically snapshot metrics, policies, and encodes.
+- Use `bash scripts/collect_debug_artifacts.sh [dest]` (or `pixi run collect-debug`) to bundle logs manually; pass `--server-log/--godot-log` to add extra files.
+- Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
 
 Shell Script (one command training)
 - Use `scripts/train.sh` to orchestrate server and Godot headless:
-  - `bash scripts/train.sh live-chaser`  # self-play; first agent starts as "it"
-  - `bash scripts/train.sh live-runner`  # self-play; second agent starts as "it"
-  - `bash scripts/train.sh stub`         # offline toy PPO training (no Godot)
-- The script requires Pixi and attempts to launch `godot4` or `godot` headless. If not found, it starts the server and asks you to open Godot manually.
+- `bash scripts/train.sh live-seeker`  # shared policy; first agent starts as the seeker
+- `bash scripts/train.sh live-hider`   # shared policy; second agent starts as the seeker
+- The script requires Pixi and attempts to launch `godot4` or `godot` headless. If not found, it keeps the server alive and asks you to open Godot manually.
 - Environment overrides for headless tuning (optional):
-  - `AI_PROGRESS_REWARD_SCALE`, `AI_TIME_PENALTY`, `AI_TAG_BONUS`, `AI_STEP_TICK_INTERVAL`
+  - `AI_DISTANCE_REWARD_SCALE`, `AI_SEEKER_TIME_PENALTY`, `AI_WIN_BONUS`, `AI_STEP_TICK_INTERVAL`
+  - `AI_TRAIN_DURATION` (seconds to run the headless client before shutting down)
+  - `AI_LOG_TRAJECTORIES=1` to dump JSONL rollouts for later rendering with `render_trajectory.sh`
 
 Record With GUI
 - If you want to capture frames, run the GUI build (headless cannot capture):

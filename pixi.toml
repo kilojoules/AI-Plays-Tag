@@ -21,4 +21,6 @@ train = { features = ["server", "rl"] }
 
 [tasks]
 server = "python trainer/server.py"
-train = "python trainer/train_stub.py"
+plot = "python trainer/plot_metrics.py"
+tests = "bash scripts/run_godot_tests.sh"
+collect-debug = "bash scripts/collect_debug_artifacts.sh"
