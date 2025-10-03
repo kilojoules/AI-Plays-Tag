@@ -9,7 +9,7 @@ Legend:
 - [I] Align repo with PRD goals: prune obsolete scaffolding and track follow-ups via component sub TODOs.
 
 ## Backlog Index
-- [I] Godot backlog — see `godot/TODO.md` (camera framing + NPC audit outstanding).
+- [x] Godot backlog — see `godot/TODO.md` (camera framing + NPC audit completed, see regression tests).
 - [ ] Trainer backlog — see `trainer/TODO.md` (awaiting PPO refactor + policy split).
 - [x] Scripts backlog — see `scripts/TODO.md` (debug bundling + Pixi automation complete).
 - [x] Documentation backlog — see `docs/TODO.md` (reward notes + workflow guides complete).
