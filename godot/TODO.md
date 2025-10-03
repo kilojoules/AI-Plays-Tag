@@ -4,4 +4,4 @@
 - [x] Confirm observation pipeline matches PRD vision requirements (`scripts/rl_env.gd`, `scripts/eyes.gd`) — verified normalized kinematics, opponent diff, forward vector, 36-ray vision with agent mask; server now consumes batched obs only.
 - [x] Verify camera framing and distance scaling for showcase recordings (`scenes/Main.tscn`, `scripts/camera_rig.gd`) — dynamic follow distance/FOV + regression in `tests/run_tests.gd` (`pixi run tests`).
 - [x] Streamline WebSocket requests in `RLEnv` once server-side compatibility fallback (`act` + `act_batch`) is no longer needed (legacy path now behind `legacy_act_fallback`).
-- [ ] Audit NPC fallback behavior for non-controlled agents so seeker/hider roles stay faithful to PRD timing rules.
+- [x] Audit NPC fallback behavior for non-controlled agents so seeker/hider roles stay faithful to PRD timing rules (`_update_npc_mode` + regression in `tests/run_tests.gd`).

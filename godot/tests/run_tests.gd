@@ -51,6 +51,7 @@ func _run_all() -> void:
     await _test_walls_block_agents()
     await _test_observation_vector(world)
     await _test_camera_scaling(world)
+    await _test_npc_roles(world)
     world.queue_free()
 
 func _test_no_fall_through_floor() -> void:
@@ -149,6 +150,41 @@ func _test_camera_scaling(world: Node) -> void:
     var far_fov := cam.fov
     _assert(far_dist > near_dist + 1.0, "camera backs up when agents separate (%.2f -> %.2f)" % [near_dist, far_dist])
     _assert(far_fov >= near_fov - 0.1, "camera FOV widens for distant agents (%.2f -> %.2f)" % [near_fov, far_fov])
+
+func _test_npc_roles(world: Node) -> void:
+    print("[tests] npc behavior follows seeker/hider roles")
+    var env: Node = world.get_node_or_null("RLEnv")
+    _assert(env != null, "RLEnv present for NPC test")
+    if env == null:
+        return
+    env.control_all_agents = false
+    env.call("_ensure_control_ai_subset")
+    env.training_mode = true
+    env.ai_is_it = false
+    env.call("_select_ai_and_other")
+    env.call("_env_reset")
+    await _process_steps(20)
+    var other_agent: Node = env.get("other_agent")
+    var ai_agent: Node = env.get("ai_agent")
+    _assert(other_agent != null and ai_agent != null, "env resolved AI/other agents")
+    if other_agent == null or ai_agent == null:
+        return
+    var npc = null
+    for child in other_agent.get_children():
+        if child.get_script() and child.get_script().resource_path.ends_with("npc_controller.gd"):
+            npc = child
+            break
+    _assert(npc != null, "NPC attached to non-AI agent")
+    if npc == null:
+        return
+    _assert(npc.mode == "chase", "NPC chases AI when other agent is seeker")
+    # Simulate role swap: AI becomes seeker after tagging event
+    other_agent.set("is_it", false)
+    ai_agent.set("is_it", true)
+    env.call("_on_tag_event", other_agent, ai_agent)
+    await _process_steps(10)
+    _assert(npc.mode == "wander", "NPC switches to wander after AI becomes seeker")
+    _assert(npc.target_path == NodePath(""), "NPC clears chase target when wandering")
 
 func _test_observation_vector(world: Node) -> void:
     print("[tests] observation vector sanity")

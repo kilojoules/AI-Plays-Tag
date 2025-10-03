@@ -314,6 +314,7 @@ func _apply_env_overrides() -> void:
     if v != "":
         var low3 = v.to_lower()
         control_all_agents = (low3 == "1" or low3 == "true" or low3 == "yes")
+        _ensure_control_ai_subset()
     v = OS.get_environment("AI_DISTANCE_REWARD_SCALE")
     if v != "":
         distance_reward_scale = float(v)
@@ -341,6 +342,7 @@ func _get_game_manager() -> Node:
     return null
 
 func _select_ai_and_other() -> void:
+    _ensure_control_ai_subset()
     ai_agent = null
     other_agent = null
     # Prefer first two from control_ai_for for pairing
@@ -380,6 +382,7 @@ func _env_reset() -> void:
         gm.reset_round(it_node)
     # Attach or configure NPC behavior for the non-AI agent
     _setup_npc_for_other()
+    _update_npc_mode()
     # Recompute distance
     if ai_agent and other_agent:
         prev_distance = ai_agent.global_transform.origin.distance_to(other_agent.global_transform.origin)
@@ -399,6 +402,7 @@ func _on_tag_event(attacker: Node, target: Node) -> void:
     tag_attacker = attacker
     tag_target = target
     _log_event({"type":"tag","attacker": attacker.name, "target": target.name})
+    call_deferred("_update_npc_mode")
 
 func _on_timeout_event() -> void:
     # Hider escape: handled by time-based termination in step loop; log for completeness
@@ -440,12 +444,39 @@ func _setup_npc_for_other() -> void:
         npc_node = null
     var npc_script = load("res://scripts/npc_controller.gd")
     npc_node = npc_script.new()
-    npc_node.mode = "wander" if ai_is_it else "chase"
-    if not ai_is_it and ai_agent:
-        # Set target before adding to the tree so _ready() sees it.
-        npc_node.target_path = other_agent.get_path_to(ai_agent)
     other_agent.add_child(npc_node)
     other_agent.control_mode = "ai"
+    _update_npc_mode()
+
+func _update_npc_mode() -> void:
+    if npc_node == null or other_agent == null:
+        return
+    if control_ai_for.size() > 1:
+        return
+    if not (is_instance_valid(npc_node) and is_instance_valid(other_agent)):
+        return
+    var other_flag = other_agent.get("is_it")
+    var other_is_it = typeof(other_flag) == TYPE_BOOL and other_flag
+    var next_mode := "wander"
+    if other_is_it and ai_agent:
+        next_mode = "chase"
+        var path: NodePath = other_agent.get_path_to(ai_agent)
+        npc_node.target_path = path
+    elif npc_node.target_path != NodePath(""):
+        npc_node.target_path = NodePath("")
+    npc_node.mode = next_mode
+    if npc_node.has_method("refresh_behavior"):
+        npc_node.call_deferred("refresh_behavior")
+
+func _ensure_control_ai_subset() -> void:
+    if control_all_agents:
+        return
+    if control_ai_for.size() == 0 and agents.size() > 0:
+        control_ai_for.append(StringName(agents[0].name))
+    if control_ai_for.size() > 1:
+        var first: StringName = control_ai_for[0]
+        control_ai_for.clear()
+        control_ai_for.append(first)
 
 func _open_log() -> void:
     if not log_trajectories:
