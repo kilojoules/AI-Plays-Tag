@@ -6,7 +6,7 @@ Legend:
 - [x] done / merged
 
 ## Current Focus
-- [I] Align repo with PRD goals: prune obsolete scaffolding and track follow-ups via component sub TODOs.
+- [x] Align repo with PRD goals: prune obsolete scaffolding and track follow-ups via component sub TODOs.
 
 ## Backlog Index
 - [x] Godot backlog — see `godot/TODO.md` (camera framing + NPC audit completed, see regression tests).
