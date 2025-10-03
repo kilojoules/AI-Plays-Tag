@@ -10,7 +10,7 @@ Legend:
 
 ## Backlog Index
 - [x] Godot backlog — see `godot/TODO.md` (camera framing + NPC audit completed, see regression tests).
-- [I] Trainer backlog — see `trainer/TODO.md` (checkpoint/reset work outstanding after PPO refactor & policy split).
+- [x] Trainer backlog — see `trainer/TODO.md` (PPO refactor, policy split, and checkpoint safeguards complete).
 - [x] Scripts backlog — see `scripts/TODO.md` (debug bundling + Pixi automation complete).
 - [x] Documentation backlog — see `docs/TODO.md` (reward notes + workflow guides complete).
 

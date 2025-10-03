@@ -109,6 +109,7 @@ copy_if_exists "$ROOT_DIR/trainer/policy.pt" "policy.pt"
 copy_if_exists "$ROOT_DIR/trainer/policy_seeker.pt" "policy_seeker.pt"
 copy_if_exists "$ROOT_DIR/trainer/policy_hider.pt" "policy_hider.pt"
 copy_dir_if_exists "$ROOT_DIR/trainer/charts" "charts"
+copy_dir_if_exists "$ROOT_DIR/trainer/checkpoints" "checkpoints"
 
 # Historical seeker logs (if present)
 copy_if_exists "$ROOT_DIR/trainer/seeker_server.log"

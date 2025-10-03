@@ -7,9 +7,11 @@ Key changes:
 """
 import asyncio
 import json
+import math
 import os
 import random
 import threading
+from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -24,20 +26,26 @@ except Exception:
     PPOConfig = None
 
 
+
 class Trainer:
     def __init__(self, batch_target: int = 2048) -> None:
-        self.policy = None  # type: ignore
-        self.cfg = None     # type: ignore
+        self.cfg: PPOConfig | None = None
         self.batch_target = batch_target
-        self.buf_obs: List[List[float]] = []
-        self.buf_act: List[List[float]] = []
-        self.buf_rew: List[float] = []
-        self.buf_done: List[bool] = []
-        self.updates_done = 0
+        self.roles = ("seeker", "hider")
+        self.gamma = 0.99
+        self.lam = 0.95
+        self.policies: Dict[str, PPOAgent] = {}
+        self.buffers: Dict[str, Dict[str, List[Any]]] = {role: self._make_buffer() for role in self.roles}
+        self.act_cache: Dict[str, Dict[str, Any]] = {}
+        self.updates_done: Dict[str, int] = {role: 0 for role in self.roles}
+        self.global_updates = 0
         self.current_ep_rewards: List[float] = []
         self.episodes_logged = 0
         self.log_dir = os.path.join(os.path.dirname(__file__), "logs")
         os.makedirs(self.log_dir, exist_ok=True)
+        self.checkpoint_dir = os.path.join(self.log_dir, "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.max_checkpoints = int(os.environ.get("PPO_MAX_CHECKPOINTS", "8"))
         self.metrics_csv = os.path.join(self.log_dir, "metrics.csv")
         self.metrics_columns = [
             "episode",
@@ -57,38 +65,63 @@ class Trainer:
         except Exception:
             self.writer = None
         self.lock = threading.Lock()
+        self.last_metrics: Dict[str, Dict[str, float]] = {
+            role: {"adv_mean": 0.0, "adv_std": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+            for role in self.roles
+        }
         self.last_adv_mean = 0.0
         self.last_adv_std = 0.0
         self.last_policy_loss = 0.0
         self.last_value_loss = 0.0
 
-    def ensure_policy(self, obs_dim: int, act_dim: int = 3):
+    def _make_buffer(self) -> Dict[str, List[Any]]:
+        return {
+            "obs": [],
+            "act": [],
+            "rew": [],
+            "done": [],
+            "logp": [],
+            "val": [],
+            "next_val": [],
+        }
+
+    def ensure_policy(self, obs_dim: int, act_dim: int = 3) -> None:
         if torch is None or PPOConfig is None or PPOAgent is None:
             return
-        if self.cfg is not None:
-            if self.cfg.obs_dim != obs_dim or self.cfg.act_dim != act_dim:
-                print(
-                    "Observation/action space changed from"
-                    f" ({self.cfg.obs_dim}, {self.cfg.act_dim}) to ({obs_dim}, {act_dim});"
-                    " reinitialising policy"
-                )
-                self.policy = None
-                self.cfg = None
-                self.buf_obs, self.buf_act, self.buf_rew, self.buf_done = [], [], [], []
-                self.current_ep_rewards = []
-        if self.policy is not None:
+        if self.cfg is not None and (self.cfg.obs_dim != obs_dim or self.cfg.act_dim != act_dim):
+            print(
+                "Observation/action space changed from"
+                f" ({self.cfg.obs_dim}, {self.cfg.act_dim}) to ({obs_dim}, {act_dim});"
+                " reinitialising policies"
+            )
+            self.cfg = None
+            self.policies = {}
+            self.buffers = {role: self._make_buffer() for role in self.roles}
+            self.act_cache.clear()
+            self.updates_done = {role: 0 for role in self.roles}
+            self.last_metrics = {
+                role: {"adv_mean": 0.0, "adv_std": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+                for role in self.roles
+            }
+        if self.cfg is not None and self.policies:
             return
         self.cfg = PPOConfig(obs_dim=obs_dim, act_dim=act_dim)
-        self.policy = PPOAgent(self.cfg)
+        self.policies = {role: PPOAgent(self.cfg) for role in self.roles}
         if os.environ.get("DISABLE_POLICY_LOAD", "0").lower() in ("1", "true", "yes"):
             return
-        policy_path = os.path.join(os.path.dirname(__file__), "policy.pt")
-        try:
-            if os.path.exists(policy_path):
-                self.policy.load_policy(policy_path)
-                print("Loaded policy.pt for action inference")
-        except Exception as e:
-            print("Policy load failed:", e)
+        base_dir = os.path.dirname(__file__)
+        legacy_path = os.path.join(base_dir, "policy.pt")
+        for role in self.roles:
+            path = os.path.join(base_dir, f"policy_{role}.pt")
+            try:
+                if os.path.exists(path):
+                    self.policies[role].load_policy(path)
+                    print(f"Loaded {path} for {role}")
+                elif os.path.exists(legacy_path) and role == "seeker":
+                    self.policies[role].load_policy(legacy_path)
+                    print("Loaded legacy policy.pt for seeker")
+            except Exception as exc:
+                print(f"Policy load failed for {role}:", exc)
 
     def act(self, obs: List[float]) -> List[float]:
         action, _, _ = self.act_with_cache("__single__", obs)
@@ -102,18 +135,14 @@ class Trainer:
         action_np, logp, value = self.policies[role].act(np.array(obs, dtype=np.float32))
         action = [float(action_np[0]), float(action_np[1]), float(action_np[2] if action_np.size > 2 else 0.0)]
         cache_key = agent_name or "__single__"
-        self.act_cache[cache_key] = {
-            "logp": logp,
-            "value": value,
-            "role": role,
-        }
+        self.act_cache[cache_key] = {"logp": logp, "value": value, "role": role}
         return action, logp, value
 
-    def add_transition(self, obs: List[float], act: List[float], rew: float, done: bool):
+    def add_transition(self, obs: List[float], act: List[float], rew: float, done: bool) -> None:
         role = self._role_from_obs(obs)
         self._store_transition(role, obs, act, rew, done, next_obs=None, agent_name=None)
 
-    def add_transition_batch(self, transitions: List[Dict[str, Any]]):
+    def add_transition_batch(self, transitions: List[Dict[str, Any]]) -> None:
         for tr in transitions:
             try:
                 obs = tr.get("obs")
@@ -127,17 +156,17 @@ class Trainer:
                     agent_name = str(info.get("agent", ""))
                 if isinstance(obs, list) and isinstance(action, list):
                     role = self._role_from_obs(obs)
-                    self._store_transition(role, obs, action, reward, done, next_obs=next_obs, agent_name=agent_name)
+                    self._store_transition(role, obs, action, reward, done, next_obs, agent_name)
             except Exception:
                 continue
 
-    def maybe_update(self):
+    def maybe_update(self) -> None:
         if not self.policies:
             return
         updates: List[Tuple[str, Dict[str, float]]] = []
         total_samples = 0
         with self.lock:
-            snapshot = {r: {k: v[:] for k, v in buf.items()} for r, buf in self.buffers.items()}
+            snapshot = {role: {k: v[:] for k, v in buf.items()} for role, buf in self.buffers.items()}
             for buf in self.buffers.values():
                 for key in buf.keys():
                     buf[key].clear()
@@ -148,6 +177,11 @@ class Trainer:
                         self.buffers[role][key].extend(values)
                 continue
             info = self._update_role(role, data)
+            if info.get("rolled_back"):
+                with self.lock:
+                    for key, values in data.items():
+                        self.buffers[role][key].extend(values)
+                continue
             updates.append((role, info))
             total_samples += info.get("batch_size", 0)
         if not updates:
@@ -158,20 +192,12 @@ class Trainer:
             self.last_adv_std = sum(i[1]["adv_std"] * i[1]["batch_size"] for i in updates) / total_samples
             self.last_policy_loss = sum(i[1]["policy_loss"] * i[1]["batch_size"] for i in updates) / total_samples
             self.last_value_loss = sum(i[1]["value_loss"] * i[1]["batch_size"] for i in updates) / total_samples
-        base_dir = os.path.dirname(__file__)
-        seeker_path = os.path.join(base_dir, "policy_seeker.pt")
-        hider_path = os.path.join(base_dir, "policy_hider.pt")
-        legacy_path = os.path.join(base_dir, "policy.pt")
         for role, info in updates:
             self.last_metrics[role] = info
             self.updates_done[role] += 1
-            path = seeker_path if role == "seeker" else hider_path
-            try:
-                self.policies[role].save_policy(path)
-                if role == "seeker":
-                    self.policies[role].save_policy(legacy_path)
-            except Exception as e:
-                print(f"Policy save failed for {role}:", e)
+            self._save_checkpoint(role)
+            if role == "seeker":
+                self._save_legacy_policy()
             if self.writer is not None:
                 step = self.updates_done[role]
                 self.writer.add_scalar(f"{role}/updates", step, self.global_updates)
@@ -179,7 +205,7 @@ class Trainer:
                 self.writer.add_scalar(f"{role}/value_loss", info["value_loss"], step)
                 self.writer.add_scalar(f"{role}/entropy", info["entropy"], step)
 
-    def log_episode(self):
+    def log_episode(self) -> None:
         if len(self.current_ep_rewards) == 0:
             return
         ep_sum = float(np.sum(self.current_ep_rewards))
@@ -209,6 +235,7 @@ class Trainer:
             self.writer.add_scalar("episode/reward_sum", ep_sum, self.episodes_logged)
             self.writer.add_scalar("episode/steps", ep_steps, self.episodes_logged)
         self.current_ep_rewards = []
+        self.act_cache.clear()
 
     def _prepare_metrics_csv(self) -> None:
         header = ",".join(self.metrics_columns)
@@ -231,7 +258,16 @@ class Trainer:
             with open(self.metrics_csv, "w") as f:
                 f.write(header + "\n")
 
-    def _store_transition(self, role: str, obs: List[float], act: List[float], rew: float, done: bool, next_obs: Any, agent_name: Any) -> None:
+    def _store_transition(
+        self,
+        role: str,
+        obs: List[float],
+        act: List[float],
+        rew: float,
+        done: bool,
+        next_obs: Any,
+        agent_name: Any,
+    ) -> None:
         cache = self._pull_cached_act(str(agent_name) if agent_name else "")
         if cache is not None:
             logp = cache.get("logp", 0.0)
@@ -252,9 +288,11 @@ class Trainer:
             buf["next_val"].append(float(0.0 if done else next_value))
             self.current_ep_rewards.append(float(rew))
         if done:
+            if agent_name:
+                self.act_cache.pop(str(agent_name), None)
             self.log_episode()
 
-    def _pull_cached_act(self, agent_name: str) -> Dict[str, Any]:
+    def _pull_cached_act(self, agent_name: str) -> Dict[str, Any] | None:
         key = agent_name or "__single__"
         return self.act_cache.pop(key, None)
 
@@ -270,6 +308,53 @@ class Trainer:
         if len(obs) > 8 and float(obs[8]) >= 0.5:
             return "seeker"
         return "hider"
+
+    def _snapshot_policy(self, role: str) -> Dict[str, Dict[str, torch.Tensor]]:
+        policy = self.policies[role]
+        return {
+            "pi": {k: v.clone() for k, v in policy.pi.state_dict().items()},
+            "vf": {k: v.clone() for k, v in policy.vf.state_dict().items()},
+        }
+
+    def _restore_policy(self, role: str, snapshot: Dict[str, Dict[str, torch.Tensor]]) -> None:
+        policy = self.policies[role]
+        policy.pi.load_state_dict(snapshot["pi"])
+        policy.vf.load_state_dict(snapshot["vf"])
+
+    def _checkpoint_path(self, role: str, step: int | None = None) -> str:
+        suffix = f"{step:05d}" if step is not None else datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.path.join(self.checkpoint_dir, f"{role}_{suffix}.pt")
+
+    def _save_checkpoint(self, role: str) -> None:
+        step = self.updates_done[role]
+        path = self._checkpoint_path(role, step)
+        try:
+            self.policies[role].save_policy(path)
+            self._trim_checkpoints(role)
+        except Exception as exc:
+            print(f"Checkpoint save failed for {role}:", exc)
+
+    def _trim_checkpoints(self, role: str) -> None:
+        if self.max_checkpoints <= 0:
+            return
+        files = sorted(
+            [p for p in os.listdir(self.checkpoint_dir) if p.startswith(f"{role}_")],
+            key=lambda name: os.path.getmtime(os.path.join(self.checkpoint_dir, name)),
+        )
+        while len(files) > self.max_checkpoints:
+            old = files.pop(0)
+            try:
+                os.remove(os.path.join(self.checkpoint_dir, old))
+            except OSError:
+                pass
+
+    def _save_legacy_policy(self) -> None:
+        base_dir = os.path.dirname(__file__)
+        legacy_path = os.path.join(base_dir, "policy.pt")
+        try:
+            self.policies["seeker"].save_policy(legacy_path)
+        except Exception as exc:
+            print("Failed to update legacy policy.pt:", exc)
 
     def _update_role(self, role: str, data: Dict[str, List[Any]]) -> Dict[str, float]:
         obs = np.array(data["obs"], dtype=np.float32)
@@ -291,15 +376,33 @@ class Trainer:
         advantages = adv.copy()
         if adv_std > 1e-6:
             advantages = (advantages - np.mean(advantages)) / (adv_std + 1e-8)
-        metrics = self.policies[role].update(obs, act, logp_old, returns, advantages)
+        snapshot = self._snapshot_policy(role)
+        try:
+            metrics = self.policies[role].update(obs, act, logp_old, returns, advantages)
+        except Exception as exc:
+            print(f"Update failed for {role}:", exc)
+            self._restore_policy(role, snapshot)
+            metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "rolled_back": True, "batch_size": 0}
+            metrics.update({"adv_mean": float(np.mean(adv)), "adv_std": float(np.std(adv))})
+            return metrics
         metrics.update({
             "adv_mean": float(np.mean(adv)),
             "adv_std": float(np.std(adv)),
             "batch_size": len(rew),
         })
+        if (
+            math.isnan(metrics["policy_loss"])
+            or math.isnan(metrics["value_loss"])
+            or math.isinf(metrics["policy_loss"])
+            or math.isinf(metrics["value_loss"])
+            or abs(metrics.get("approx_kl", 0.0)) > self.cfg.target_kl * 5.0
+        ):
+            self._restore_policy(role, snapshot)
+            metrics["rolled_back"] = True
+            metrics["batch_size"] = 0
+            return metrics
+        metrics["rolled_back"] = False
         return metrics
-
-
 trainer = Trainer()
 
 
