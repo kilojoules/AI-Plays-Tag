@@ -2,6 +2,7 @@ extends Node3D
 
 @export var trajectory_path: String = ""
 @export var speed: float = 1.0
+@export var render_quality: String = "high"
 
 var data: Array = []
 var agents: Dictionary = {}
@@ -10,6 +11,7 @@ var idx: int = 0
 
 func _ready() -> void:
     _apply_env_overrides()
+    _apply_quality_preset()
     if trajectory_path == "":
         trajectory_path = _find_latest_trajectory()
     if trajectory_path == "":
@@ -94,6 +96,86 @@ func _apply_env_overrides() -> void:
     var v = OS.get_environment("AI_REPLAY_PATH")
     if v != "":
         trajectory_path = v
+    v = OS.get_environment("AI_RENDER_QUALITY")
+    if v != "":
+        render_quality = v
+    render_quality = _normalize_quality(render_quality)
+
+func _normalize_quality(val: String) -> String:
+    var lower := val.to_lower()
+    if lower == "high":
+        return "high"
+    return "low"
+
+func _apply_quality_preset() -> void:
+    var preset := _normalize_quality(render_quality)
+    render_quality = preset
+    if preset == "high":
+        _apply_high_quality()
+        print("[Replay] Render quality preset: high")
+    else:
+        _apply_low_quality()
+        print("[Replay] Render quality preset: low")
+
+func _apply_low_quality() -> void:
+    var world_env: WorldEnvironment = get_node_or_null("WorldEnvironment")
+    if world_env and world_env.environment:
+        var env: Environment = world_env.environment
+        env.set("ambient_light_energy", 1.5)
+        env.set("auto_exposure_enabled", false)
+        env.set("ssao_enabled", false)
+        env.set("ssr_enabled", false)
+        env.set("sdfgi_enabled", false)
+        env.set("glow_enabled", false)
+        env.set("volumetric_fog_enabled", false)
+    _configure_light("DirectionalLight3D", false, false)
+    _configure_light("FillLight", false, false)
+    _configure_light("BackSpot", false, false)
+    var probe: ReflectionProbe = get_node_or_null("ReflectionProbe")
+    if probe:
+        probe.visible = false
+        probe.intensity = 0.0
+
+func _apply_high_quality() -> void:
+    var world_env: WorldEnvironment = get_node_or_null("WorldEnvironment")
+    if world_env and world_env.environment:
+        var env: Environment = world_env.environment
+        env.set("ambient_light_energy", 1.0)
+        env.set("auto_exposure_enabled", true)
+        env.set("ssao_enabled", true)
+        env.set("ssr_enabled", true)
+        env.set("sdfgi_enabled", true)
+        env.set("glow_enabled", true)
+        env.set("volumetric_fog_enabled", true)
+    _configure_light("DirectionalLight3D", true, true)
+    _configure_light("FillLight", true, true)
+    _configure_light("BackSpot", true, true)
+    var dir := get_node_or_null("DirectionalLight3D") as DirectionalLight3D
+    if dir:
+        dir.light_energy = 2.4
+        dir.light_indirect_energy = 1.1
+        dir.light_specular = 1.2
+    var fill := get_node_or_null("FillLight") as OmniLight3D
+    if fill:
+        fill.light_energy = 1.1
+        fill.light_specular = 1.1
+    var back := get_node_or_null("BackSpot") as SpotLight3D
+    if back:
+        back.light_energy = 1.8
+        back.light_indirect_energy = 0.85
+    var probe: ReflectionProbe = get_node_or_null("ReflectionProbe")
+    if probe:
+        probe.visible = true
+        probe.intensity = 1.1
+
+func _configure_light(node_name: String, enable: bool, shadow_enable: bool) -> void:
+    var n = get_node_or_null(node_name)
+    if n == null:
+        return
+    if n is Light3D:
+        var light := n as Light3D
+        light.visible = enable
+        light.shadow_enabled = enable and shadow_enable
 
 func _find_latest_trajectory() -> String:
     var dir := DirAccess.open("user://trajectories")
