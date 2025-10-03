@@ -39,15 +39,28 @@ class Trainer:
         self.log_dir = os.path.join(os.path.dirname(__file__), "logs")
         os.makedirs(self.log_dir, exist_ok=True)
         self.metrics_csv = os.path.join(self.log_dir, "metrics.csv")
-        if not os.path.exists(self.metrics_csv):
-            with open(self.metrics_csv, "w") as f:
-                f.write("episode,reward_mean,reward_sum,steps,updates\n")
+        self.metrics_columns = [
+            "episode",
+            "reward_mean",
+            "reward_sum",
+            "steps",
+            "updates",
+            "advantage_mean",
+            "advantage_std",
+            "policy_loss",
+            "value_loss",
+        ]
+        self._prepare_metrics_csv()
         try:
             from torch.utils.tensorboard import SummaryWriter  # type: ignore
             self.writer = SummaryWriter(self.log_dir)
         except Exception:
             self.writer = None
         self.lock = threading.Lock()
+        self.last_adv_mean = 0.0
+        self.last_adv_std = 0.0
+        self.last_policy_loss = 0.0
+        self.last_value_loss = 0.0
 
     def ensure_policy(self, obs_dim: int, act_dim: int = 3):
         if torch is None or PPOConfig is None or PPOAgent is None:
@@ -118,6 +131,8 @@ class Trainer:
             done = np.array(self.buf_done, dtype=np.bool_)
             self.buf_obs, self.buf_act, self.buf_rew, self.buf_done = [], [], [], []
         try:
+            policy_losses: List[float] = []
+            value_losses: List[float] = []
             with torch.no_grad():
                 v = self.policy.vf(torch.as_tensor(obs, dtype=torch.float32)).squeeze(-1).numpy()
             gamma, lam = 0.99, 0.95
@@ -146,13 +161,22 @@ class Trainer:
                     pi_loss = ((pred - a) ** 2 * adv_j.unsqueeze(-1)).mean()
                     v_pred = self.policy.vf(o).squeeze(-1)
                     v_loss = ((v_pred - r) ** 2).mean()
+                    policy_losses.append(float(pi_loss.item()))
+                    value_losses.append(float(v_loss.item()))
                     self.policy.pi_opt.zero_grad(); pi_loss.backward(); self.policy.pi_opt.step()
                     self.policy.vf_opt.zero_grad(); v_loss.backward(); self.policy.vf_opt.step()
             torch.save(self.policy.pi.state_dict(), os.path.join(os.path.dirname(__file__), "policy.pt"))
             self.updates_done += 1
             print(f"Policy updated x{self.updates_done}; buffer cleared")
+            self.last_adv_mean = float(np.mean(advantages))
+            self.last_adv_std = float(np.std(advantages))
+            self.last_policy_loss = float(np.mean(policy_losses)) if policy_losses else 0.0
+            self.last_value_loss = float(np.mean(value_losses)) if value_losses else 0.0
             if self.writer is not None:
                 self.writer.add_scalar("updates/count", self.updates_done, self.updates_done)
+                self.writer.add_scalar("updates/advantage_std", self.last_adv_std, self.updates_done)
+                self.writer.add_scalar("updates/policy_loss", self.last_policy_loss, self.updates_done)
+                self.writer.add_scalar("updates/value_loss", self.last_value_loss, self.updates_done)
         except Exception as e:
             print("Update failed:", e)
 
@@ -164,12 +188,48 @@ class Trainer:
         ep_steps = int(len(self.current_ep_rewards))
         self.episodes_logged += 1
         with open(self.metrics_csv, "a") as f:
-            f.write(f"{self.episodes_logged},{ep_mean},{ep_sum},{ep_steps},{self.updates_done}\n")
+            f.write(
+                ",".join(
+                    [
+                        str(self.episodes_logged),
+                        f"{ep_mean}",
+                        f"{ep_sum}",
+                        f"{ep_steps}",
+                        f"{self.updates_done}",
+                        f"{self.last_adv_mean}",
+                        f"{self.last_adv_std}",
+                        f"{self.last_policy_loss}",
+                        f"{self.last_value_loss}",
+                    ]
+                )
+                + "\n"
+            )
         if self.writer is not None:
             self.writer.add_scalar("episode/reward_mean", ep_mean, self.episodes_logged)
             self.writer.add_scalar("episode/reward_sum", ep_sum, self.episodes_logged)
             self.writer.add_scalar("episode/steps", ep_steps, self.episodes_logged)
         self.current_ep_rewards = []
+
+    def _prepare_metrics_csv(self) -> None:
+        header = ",".join(self.metrics_columns)
+        if not os.path.exists(self.metrics_csv):
+            with open(self.metrics_csv, "w") as f:
+                f.write(header + "\n")
+            return
+        try:
+            with open(self.metrics_csv, "r") as f:
+                existing = f.readline().strip()
+        except Exception:
+            existing = ""
+        if existing != header:
+            backup = self.metrics_csv + ".legacy"
+            try:
+                os.replace(self.metrics_csv, backup)
+                print(f"Metrics header changed; moved legacy log to {backup}")
+            except Exception:
+                pass
+            with open(self.metrics_csv, "w") as f:
+                f.write(header + "\n")
 
 
 trainer = Trainer()
