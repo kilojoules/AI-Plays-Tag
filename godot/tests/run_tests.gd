@@ -50,6 +50,7 @@ func _run_all() -> void:
     await _test_no_fall_through_floor()
     await _test_walls_block_agents()
     await _test_observation_vector(world)
+    await _test_camera_scaling(world)
     world.queue_free()
 
 func _test_no_fall_through_floor() -> void:
@@ -117,6 +118,37 @@ func _test_walls_block_agents() -> void:
     a.ai_move_input = Vector2(0, 1)
     await _physics_steps(180)
     _assert(a.global_transform.origin.z <= 14.7, "south wall stops agent (z<=14.7), got %f" % a.global_transform.origin.z)
+
+func _test_camera_scaling(world: Node) -> void:
+    print("[tests] camera framing adjusts by distance")
+    var rig: Node3D = world.get_node_or_null("CameraRig")
+    _assert(rig != null, "CameraRig present")
+    if rig == null:
+        return
+    rig.fixed_camera = false
+    var agents = _find_agents()
+    _assert(agents.size() >= 2, "at least two agents present for camera validation")
+    if agents.size() < 2:
+        return
+    var a: Node3D = agents[0]
+    var b: Node3D = agents[1]
+    a.global_transform.origin = Vector3(-1.0, 1.0, 0.0)
+    b.global_transform.origin = Vector3(1.0, 1.0, 0.0)
+    a.velocity = Vector3.ZERO
+    b.velocity = Vector3.ZERO
+    await _process_steps(20)
+    var center := (a.global_transform.origin + b.global_transform.origin) * 0.5
+    var near_dist := rig.global_transform.origin.distance_to(center)
+    var cam: Camera3D = rig.get_node("SpringArm3D/Camera3D")
+    var near_fov := cam.fov
+    a.global_transform.origin = Vector3(-12.0, 1.0, 0.0)
+    b.global_transform.origin = Vector3(12.0, 1.0, 0.0)
+    await _process_steps(40)
+    center = (a.global_transform.origin + b.global_transform.origin) * 0.5
+    var far_dist := rig.global_transform.origin.distance_to(center)
+    var far_fov := cam.fov
+    _assert(far_dist > near_dist + 1.0, "camera backs up when agents separate (%.2f -> %.2f)" % [near_dist, far_dist])
+    _assert(far_fov >= near_fov - 0.1, "camera FOV widens for distant agents (%.2f -> %.2f)" % [near_fov, far_fov])
 
 func _test_observation_vector(world: Node) -> void:
     print("[tests] observation vector sanity")

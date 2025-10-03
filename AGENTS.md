@@ -66,6 +66,8 @@ We want to have lots of git commits on record. We should be making many new comm
     git rebase origin/main
     ```
 
+see CONTRIBUTING.md for full git instructions
+
 -----
 ## Testing Strategy
    - develop a robust set of tests designed to run quickly and test all features specified in PRD.md
