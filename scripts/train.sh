@@ -60,6 +60,7 @@ PY
 
 run_godot_headless() {
   local role=$1 # seeker|hider
+  local log_path=${2:-$GODOT_LOG_PATH}
   local godot_bin="${GODOT_BIN:-}"
   # Try PATH names
   if [[ -z "$godot_bin" ]] && command -v godot4 >/dev/null 2>&1; then godot_bin="godot4"; fi
@@ -86,7 +87,7 @@ MSG
   local AI_IS_IT=1
   if [[ "$role" == "hider" ]]; then AI_IS_IT=0; fi
   local DURATION="${AI_TRAIN_DURATION:-0}"
-  echo "[train.sh] Streaming Godot output to $GODOT_LOG_PATH"
+  echo "[train.sh] Streaming Godot output to $log_path"
   (
     cd "$ROOT_DIR"
     env \
@@ -98,7 +99,7 @@ MSG
       AI_RECORD=${AI_RECORD:-0} \
       AI_LOG_TRAJECTORIES=${AI_LOG_TRAJECTORIES:-0} \
       "$godot_bin" --headless --path "$ROOT_DIR/godot"
-  ) >"$GODOT_LOG_PATH" 2>&1 &
+  ) >"$log_path" 2>&1 &
   GODO_PID=$!
   if [[ "$DURATION" == "0" ]]; then
     echo "[train.sh] Godot PID: $GODO_PID (press Ctrl+C when you want to stop)"
@@ -109,6 +110,81 @@ MSG
     kill "$GODO_PID" 2>/dev/null || true
     wait "$GODO_PID" 2>/dev/null || true
   fi
+}
+
+run_self_play() {
+  local rounds_raw="${SELF_PLAY_ROUNDS:-4}"
+  local rounds="$rounds_raw"
+  if ! [[ "$rounds" =~ ^[0-9]+$ ]] || [[ "$rounds" -eq 0 ]]; then
+    echo "[train.sh] Invalid SELF_PLAY_ROUNDS='$rounds_raw'; defaulting to 4 rounds (2 per role)."
+    rounds=4
+  fi
+  if (( rounds % 2 == 1 )); then
+    echo "[train.sh] SELF_PLAY_ROUNDS=$rounds is odd; adding one extra round to complete a role pair."
+    rounds=$((rounds + 1))
+  fi
+
+  local duration_raw="${SELF_PLAY_DURATION:-}"
+  local duration="$duration_raw"
+  if [[ -z "$duration" ]]; then
+    duration="${AI_TRAIN_DURATION:-0}"
+  fi
+  if ! [[ "$duration" =~ ^[0-9]+$ ]] || [[ "$duration" -le 0 ]]; then
+    duration=180
+    echo "[train.sh] SELF_PLAY_DURATION not set; defaulting to ${duration}s per round. Set SELF_PLAY_DURATION to override."
+  fi
+
+  local start_role="${SELF_PLAY_START_ROLE:-seeker}"
+  if [[ "$start_role" != "hider" ]]; then
+    start_role="seeker"
+  fi
+
+  local summary_path="$DEBUG_DIR/self_play_rounds.csv"
+  if [[ ! -f "$summary_path" ]]; then
+    echo "round_index,role,start_ts,end_ts,log_path" >"$summary_path"
+  fi
+
+  local original_duration="${AI_TRAIN_DURATION:-}"
+  local -a round_logs=()
+  local role="$start_role"
+
+  echo "[train.sh] Starting self-play pipeline: ${rounds} rounds, ${duration}s per round (starting role: $role)."
+
+  local round_index
+  for ((round_index = 1; round_index <= rounds; round_index++)); do
+    local round_log="$DEBUG_DIR/godot_round$(printf '%02d' "$round_index").log"
+    round_logs+=("$round_log")
+    local start_ts
+    start_ts="$(date -Iseconds)"
+    echo "[train.sh] --- Self-play round $round_index/$rounds (role=$role, ${duration}s) ---"
+    AI_TRAIN_DURATION="$duration"
+    run_godot_headless "$role" "$round_log"
+    local end_ts
+    end_ts="$(date -Iseconds)"
+    echo "$round_index,$role,$start_ts,$end_ts,$round_log" >>"$summary_path"
+    if [[ "$role" == "seeker" ]]; then
+      role="hider"
+    else
+      role="seeker"
+    fi
+  done
+
+  if [[ -n "$original_duration" ]]; then
+    AI_TRAIN_DURATION="$original_duration"
+  else
+    unset AI_TRAIN_DURATION
+  fi
+
+  : >"$GODOT_LOG_PATH"
+  local idx=1
+  for log_file in "${round_logs[@]}"; do
+    if [[ -f "$log_file" ]]; then
+      printf '===== Self-play round %02d (%s) =====\n' "$idx" "$(basename "$log_file")" >>"$GODOT_LOG_PATH"
+      cat "$log_file" >>"$GODOT_LOG_PATH"
+      printf '\n' >>"$GODOT_LOG_PATH"
+    fi
+    ((idx++))
+  done
 }
 
 make_video_from_frames() {
@@ -181,7 +257,18 @@ case "$MODE" in
     bash "$ROOT_DIR/scripts/collect_debug_artifacts.sh" "$DEBUG_DIR" --server-log "$SERVER_LOG_PATH" --godot-log "$GODOT_LOG_PATH"
     COLLECTED_DEBUG=1
     ;;
+  self-play)
+    need_cmd pixi
+    echo "[train.sh] Pre-warming Pixi environment (train) ..."
+    ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    start_server_bg
+    wait_for_port
+    run_self_play
+    make_video_from_frames
+    bash "$ROOT_DIR/scripts/collect_debug_artifacts.sh" "$DEBUG_DIR" --server-log "$SERVER_LOG_PATH" --godot-log "$GODOT_LOG_PATH"
+    COLLECTED_DEBUG=1
+    ;;
   *)
-    echo "Usage: $0 [live-seeker|live-hider]"; exit 1;
+    echo "Usage: $0 [live-seeker|live-hider|self-play]"; exit 1;
     ;;
 esac

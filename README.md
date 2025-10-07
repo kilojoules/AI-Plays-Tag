@@ -79,16 +79,19 @@ Debug Artifacts
 - Use `bash scripts/collect_debug_artifacts.sh [dest]` (or `pixi run collect-debug`) to bundle logs manually; pass `--server-log/--godot-log` to add extra files.
 - Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
 - Trainer metrics now track advantage statistics and PPO losses; rerun `pixi run -e train plot` to render the new charts (`advantage_mean.png`, `policy_loss.png`, etc.).
+- Self-play runs also capture `self_play_rounds.csv` and per-round `godot_round*.log` files inside the debug directory for postmortem analysis.
 
 Shell Script (one command training)
 - Use `scripts/train.sh` to orchestrate server and Godot headless:
 - `bash scripts/train.sh live-seeker`  # shared policy; first agent starts as the seeker
 - `bash scripts/train.sh live-hider`   # shared policy; second agent starts as the seeker
+- `bash scripts/train.sh self-play`    # runs alternating seeker/hider rounds in a single session (self-play pipeline)
 - The script requires Pixi and attempts to launch `godot4` or `godot` headless. If not found, it keeps the server alive and asks you to open Godot manually.
 - Environment overrides for headless tuning (optional):
   - `AI_DISTANCE_REWARD_SCALE`, `AI_SEEKER_TIME_PENALTY`, `AI_WIN_BONUS`, `AI_STEP_TICK_INTERVAL`
   - `AI_TRAIN_DURATION` (seconds to run the headless client before shutting down)
   - `AI_LOG_TRAJECTORIES=1` to dump JSONL rollouts for later rendering with `render_trajectory.sh`
+  - Self-play extras: `SELF_PLAY_ROUNDS` (even count of alternating rounds), `SELF_PLAY_DURATION` (seconds per round), `SELF_PLAY_START_ROLE` (`seeker` or `hider`)
 
 Record With GUI
 - If you want to capture frames, run the GUI build (headless cannot capture):

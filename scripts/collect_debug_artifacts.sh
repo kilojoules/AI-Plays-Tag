@@ -101,6 +101,17 @@ if [[ -n "$SERVER_LOG" ]]; then
 fi
 if [[ -n "$GODOT_LOG" ]]; then
   copy_if_exists "$GODOT_LOG" "godot.log"
+  godot_dir="$(dirname "$GODOT_LOG")"
+  shopt -s nullglob
+  for extra_log in "$godot_dir"/godot_round*.log; do
+    if [[ -f "$extra_log" ]]; then
+      copy_if_exists "$extra_log" "$(basename "$extra_log")"
+    fi
+  done
+  shopt -u nullglob
+  if [[ -f "$godot_dir/self_play_rounds.csv" ]]; then
+    copy_if_exists "$godot_dir/self_play_rounds.csv" "self_play_rounds.csv"
+  fi
 fi
 
 # Trainer artifacts
