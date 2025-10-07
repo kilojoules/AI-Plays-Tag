@@ -6,4 +6,4 @@
 - [x] Harden reset, timeout, and tag-event handling when consuming Godot transitions (avoid stale buffers). *(server caches per-agent actions, clears on episode end, and requeues batches when updates roll back; covered by `pixi run tests`).*
 - [x] Implement checkpoints/rollbacks for policy updates so failed runs can be debugged safely. *(policies snapshot before PPO updates, roll back on NaN/KL spikes, and persist rotating checkpoints & legacy copies).*
 
-- [I] Develop self-play training pipeline (Codex in progress 2025-10-07).
+- [x] Develop self-play training pipeline (Codex completed 2025-10-07).
