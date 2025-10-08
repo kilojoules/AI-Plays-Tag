@@ -8,6 +8,8 @@ set -euo pipefail
 
 MODE=${1:-live-seeker}
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
+source "$ROOT_DIR/scripts/lib/data_paths.sh"
+ai_ensure_data_dirs
 PORT=8765
 RUN_ID="${TRAIN_RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 DEBUG_DIR="$ROOT_DIR/debug/$RUN_ID"
@@ -91,6 +93,7 @@ MSG
   (
     cd "$ROOT_DIR"
     env \
+      AI_DATA_ROOT="$AI_DATA_ROOT" \
       AI_TRAINING_MODE=1 \
       AI_IS_IT=$AI_IS_IT \
       AI_CONTROL_ALL_AGENTS=1 \
@@ -188,14 +191,22 @@ run_self_play() {
 }
 
 make_video_from_frames() {
-  local frames_dir
-  if [[ "$(uname)" == "Darwin" ]]; then
-    frames_dir="$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/frames"
-  else
-    frames_dir="$HOME/.local/share/godot/app_userdata/AI Tag Game/frames"
+  local frames_dir="$AI_FRAMES_DIR"
+  local legacy_dirs=()
+  if [[ -n "${AI_LEGACY_FRAMES_DIRS:-}" ]]; then
+    IFS="$AI_PATHSEP" read -r -a legacy_dirs <<< "$AI_LEGACY_FRAMES_DIRS"
   fi
   if [[ ! -d "$frames_dir" ]]; then
-    echo "[train.sh] No frames found at: $frames_dir"
+    for legacy in "${legacy_dirs[@]}"; do
+      if [[ -d "$legacy" ]]; then
+        echo "[train.sh] Falling back to legacy frames directory: $legacy"
+        frames_dir="$legacy"
+        break
+      fi
+    done
+  fi
+  if [[ ! -d "$frames_dir" ]]; then
+    echo "[train.sh] No frames found. Checked workspace and legacy directories."
     return 0
   fi
   local FFMPEG_BIN="ffmpeg"

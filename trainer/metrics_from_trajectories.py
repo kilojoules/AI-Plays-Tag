@@ -1,25 +1,63 @@
 #!/usr/bin/env python3
-import os
-import json
 import glob
-from typing import Dict, List, Tuple
+import json
+import os
+from pathlib import Path
+from typing import Dict, Iterable, List, Tuple
 
 
-def trajectories_dir() -> str:
-    home = os.path.expanduser("~")
-    # macOS default
-    mac = os.path.join(home, "Library", "Application Support", "Godot", "app_userdata", "AI Tag Game", "trajectories")
-    if os.path.isdir(mac):
-        return mac
-    # Linux default
-    lin = os.path.join(home, ".local", "share", "godot", "app_userdata", "AI Tag Game", "trajectories")
-    if os.path.isdir(lin):
-        return lin
-    # Windows default
-    win = os.path.join(os.environ.get("APPDATA", os.path.join(home, "AppData", "Roaming")), "Godot", "app_userdata", "AI Tag Game", "trajectories")
-    if os.path.isdir(win):
-        return win
-    return ""
+def _repo_default_dir() -> str:
+    project_root = Path(__file__).resolve().parents[1]
+    return str(project_root / "data" / "trajectories")
+
+
+def _legacy_dirs_from_env(env_key: str) -> Iterable[str]:
+    raw = os.environ.get(env_key, "")
+    if not raw:
+        return []
+    sep = os.environ.get("AI_PATHSEP", os.pathsep)
+    return [entry.strip() for entry in raw.split(sep) if entry.strip()]
+
+
+def candidate_trajectory_dirs() -> List[str]:
+    candidates: List[str] = []
+    env_dir = os.environ.get("AI_TRAJECTORIES_DIR")
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.append(_repo_default_dir())
+    candidates.extend(_legacy_dirs_from_env("AI_LEGACY_TRAJECTORY_DIRS"))
+
+    # Fallback to OS-specific defaults to support pre-migration artifacts.
+    home = Path.home()
+    candidates.append(str(home / "Library" / "Application Support" / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
+    candidates.append(str(home / ".local" / "share" / "godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(str(Path(appdata) / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
+
+    seen = set()
+    ordered: List[str] = []
+    for path in candidates:
+        if not path:
+            continue
+        try:
+            resolved = str(Path(path).expanduser().resolve())
+        except OSError:
+            continue
+        if resolved not in seen:
+            seen.add(resolved)
+            ordered.append(resolved)
+    return ordered
+
+
+def find_first_dir_with_trajectories() -> Tuple[str, List[str]]:
+    for directory in candidate_trajectory_dirs():
+        if not os.path.isdir(directory):
+            continue
+        files = sorted(glob.glob(os.path.join(directory, "*.jsonl")))
+        if files:
+            return directory, files
+    return "", []
 
 
 def parse_episode(path: str) -> Tuple[int, Dict[str, int]]:
@@ -47,14 +85,11 @@ def parse_episode(path: str) -> Tuple[int, Dict[str, int]]:
 
 
 def main():
-    tdir = trajectories_dir()
+    tdir, files = find_first_dir_with_trajectories()
     if not tdir:
-        print("No trajectories directory found.")
+        print("No trajectory files found in known directories.")
         return
-    files = sorted(glob.glob(os.path.join(tdir, "ep_*.jsonl")))
-    if not files:
-        print("No trajectory files found in", tdir)
-        return
+    print(f"Using trajectories from: {tdir}")
     out_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(out_dir, exist_ok=True)
     csv_path = os.path.join(out_dir, "metrics.csv")
@@ -77,4 +112,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

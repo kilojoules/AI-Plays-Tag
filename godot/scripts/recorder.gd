@@ -1,4 +1,5 @@
 extends Node
+const DataPaths = preload("res://scripts/data_paths.gd")
 
 @export var enabled: bool = false
 @export var fps: int = 60
@@ -8,9 +9,7 @@ var acc := 0.0
 func _ready() -> void:
     _apply_env_overrides()
     if enabled:
-        var d := DirAccess.open("user://")
-        if d:
-            d.make_dir_recursive("frames")
+        DataPaths.frames_dir()
 
 func _process(delta: float) -> void:
     if not enabled:
@@ -28,7 +27,7 @@ func _process(delta: float) -> void:
         var img: Image = tex.get_image()
         if img == null:
             return
-        var path := "user://frames/frame_%05d.png" % i
+        var path := DataPaths.frames_dir().path_join("frame_%05d.png" % i)
         img.save_png(path)
         i += 1
 

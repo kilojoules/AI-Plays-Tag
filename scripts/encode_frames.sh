@@ -4,11 +4,22 @@ set -euo pipefail
 # Encode frames dumped by recorder.gd into an MP4 using ffmpeg.
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
+source "$ROOT_DIR/scripts/lib/data_paths.sh"
+ai_ensure_data_dirs
 
-if [[ "$(uname)" == "Darwin" ]]; then
-  FRAMES_DIR="$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/frames"
-else
-  FRAMES_DIR="$HOME/.local/share/godot/app_userdata/AI Tag Game/frames"
+FRAMES_DIR="$AI_FRAMES_DIR"
+LEGACY_FRAMES_DIRS=()
+if [[ -n "${AI_LEGACY_FRAMES_DIRS:-}" ]]; then
+  IFS="$AI_PATHSEP" read -r -a LEGACY_FRAMES_DIRS <<< "$AI_LEGACY_FRAMES_DIRS"
+fi
+if [[ ! -d "$FRAMES_DIR" ]]; then
+  for legacy in "${LEGACY_FRAMES_DIRS[@]}"; do
+    if [[ -d "$legacy" ]]; then
+      echo "[encode] Falling back to legacy frames directory: $legacy"
+      FRAMES_DIR="$legacy"
+      break
+    fi
+  done
 fi
 
 if [[ ! -d "$FRAMES_DIR" ]]; then

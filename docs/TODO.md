@@ -4,3 +4,5 @@
 - [x] Refresh `README.md` to walk through the Pixi-based end-to-end workflow after cleanup (Pixi tasks + debug docs added).
 - [x] Document trajectory rendering expectations for `scripts/render_trajectory.sh` and `Replay.tscn` (`docs/trajectory_rendering.md`).
 - [x] Capture the WebSocket message contract (act/transition batches) in developer-facing docs (`docs/ws_protocol.md`).
+- [x] Update `README.md` and `docs/trajectory_rendering.md` to describe the repo-local data directory, including migration notes for existing `app_userdata` files.
+- [x] Add a short guide covering environment variables/config knobs for redirecting data storage when embedding the project elsewhere.

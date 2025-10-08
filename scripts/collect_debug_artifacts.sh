@@ -2,17 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
-DEFAULT_TRAJECTORY_DIR="$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/trajectories"
-DEFAULT_FRAMES_DIR="$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/frames"
-LINUX_TRAJECTORY_DIR="$HOME/.local/share/godot/app_userdata/AI Tag Game/trajectories"
-LINUX_FRAMES_DIR="$HOME/.local/share/godot/app_userdata/AI Tag Game/frames"
+source "$ROOT_DIR/scripts/lib/data_paths.sh"
+ai_ensure_data_dirs
 
-if [[ ! -d "$DEFAULT_TRAJECTORY_DIR" && -d "$LINUX_TRAJECTORY_DIR" ]]; then
-  DEFAULT_TRAJECTORY_DIR="$LINUX_TRAJECTORY_DIR"
-fi
-if [[ ! -d "$DEFAULT_FRAMES_DIR" && -d "$LINUX_FRAMES_DIR" ]]; then
-  DEFAULT_FRAMES_DIR="$LINUX_FRAMES_DIR"
-fi
+DEFAULT_TRAJECTORY_DIR="$AI_TRAJECTORIES_DIR"
+DEFAULT_FRAMES_DIR="$AI_FRAMES_DIR"
+
+mapfile -t LEGACY_TRAJECTORY_DIRS < <(ai_legacy_trajectory_dirs)
+mapfile -t LEGACY_FRAMES_DIRS < <(ai_legacy_frames_dirs)
 
 usage() {
   cat <<USAGE
@@ -130,10 +127,29 @@ copy_if_exists "$ROOT_DIR/trainer/seeker_godot.log"
 if [[ -n "$TRAJECTORY_PATH" ]]; then
   copy_if_exists "$TRAJECTORY_PATH" "trajectory.jsonl"
 else
+  latest=""
+  searched=()
   if [[ -d "$DEFAULT_TRAJECTORY_DIR" ]]; then
+    searched+=("$DEFAULT_TRAJECTORY_DIR")
     latest="$(ls -t "$DEFAULT_TRAJECTORY_DIR"/*.jsonl 2>/dev/null | head -n 1 || true)"
     if [[ -n "$latest" ]]; then
       copy_if_exists "$latest" "$(basename "$latest")"
+    fi
+  fi
+  if [[ -z "$latest" ]]; then
+    for legacy_dir in "${LEGACY_TRAJECTORY_DIRS[@]}"; do
+      if [[ -d "$legacy_dir" ]]; then
+        searched+=("$legacy_dir")
+        latest="$(ls -t "$legacy_dir"/*.jsonl 2>/dev/null | head -n 1 || true)"
+        if [[ -n "$latest" ]]; then
+          copy_if_exists "$latest" "$(basename "$latest")"
+          echo "[collect] (legacy) copied from $legacy_dir"
+          break
+        fi
+      fi
+    done
+    if [[ -z "$latest" ]]; then
+      echo "[collect] No trajectory files found. Checked: ${searched[*]}" >&2
     fi
   fi
 fi
@@ -142,8 +158,23 @@ fi
 if [[ -n "$FRAMES_DIR" ]]; then
   copy_dir_if_exists "$FRAMES_DIR" "frames"
 else
+  copied=0
   if [[ -d "$DEFAULT_FRAMES_DIR" ]]; then
     copy_dir_if_exists "$DEFAULT_FRAMES_DIR" "frames"
+    copied=1
+  fi
+  if [[ "$copied" -eq 0 ]]; then
+    for legacy_dir in "${LEGACY_FRAMES_DIRS[@]}"; do
+      if [[ -d "$legacy_dir" ]]; then
+        copy_dir_if_exists "$legacy_dir" "frames"
+        echo "[collect] (legacy) copied frames from $legacy_dir"
+        copied=1
+        break
+      fi
+    done
+  fi
+  if [[ "$copied" -eq 0 ]]; then
+    echo "[collect] No frames directory found. Checked workspace + legacy locations." >&2
   fi
 fi
 

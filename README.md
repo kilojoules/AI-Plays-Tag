@@ -8,6 +8,7 @@ Overview
 Structure
 - `godot/`: Godot 4 project with scenes and scripts.
 - `trainer/`: Python bridge and RL training scaffolding.
+- `data/`: Workspace-local runtime artifacts (trajectories, frame dumps, imported legacy data). Override with `AI_DATA_ROOT` if embedding the project elsewhere.
 
 Quick Start (Phase 1: Manual Control)
 - Open `godot/` in Godot 4.x.
@@ -43,6 +44,7 @@ Python Environment (Pixi preferred)
   - `pixi run -e train plot`      # regenerate charts from `trainer/logs/metrics.csv`
   - `pixi run tests`              # headless Godot test suite (uses `scripts/run_godot_tests.sh`)
   - `pixi run collect-debug`      # gather logs/metrics into `debug/<timestamp>/`
+  - `pixi run eval-episode`       # run a single headless evaluation, log the trajectory, and render a path PNG
 
 Pip (optional, server-only)
 - If you only need the WebSocket server (no PyTorch), you can also do:
@@ -55,12 +57,20 @@ Wire Godot to the Server
 - Start the Python server first (`pixi run -e default server`), then run the Godot scene `scenes/Main.tscn`.
 - With `control_all_agents=true`, both agents use the shared policy (self-play). With training enabled, the server updates the policy over time; otherwise it uses random or a saved `policy.pt`.
 
+Runtime Data Directory
+- All training/eval artifacts now land inside `data/` by default:
+  - `data/trajectories/ep_*.jsonl` — headless rollouts and evaluation traces.
+  - `data/frames/frame_*.png` — GUI recordings captured by `recorder.gd`.
+  - `data/_imported/...` — optional backups copied from legacy `app_userdata` locations.
+- Shell helpers (`scripts/lib/data_paths.sh`) expose the shared paths so scripts and Godot stay in sync.
+- Override `AI_DATA_ROOT=/custom/path` when you need an alternate workspace.
+- Run `pixi run migrate-user-data` once to copy existing `app_userdata` trajectories/frames into `data/`.
+
 Recording an Animation (Open-Source)
 - Add a `Node` to the scene and attach `scripts/recorder.gd`.
-- Set `enabled=true` to dump frames into `user://frames` while the scene runs.
+- Set `enabled=true` to dump frames into `data/frames` while the scene runs.
 - Encode to video:
-  - macOS/Linux: `ffmpeg -r 60 -i $HOME/Library/Application\ Support/Godot/app_userdata/AI\ Tag\ Game/frames/frame_%05d.png -c:v libx264 -pix_fmt yuv420p out.mp4`
-  - Windows: adjust the `app_userdata` path under `%APPDATA%/Godot/app_userdata/AI Tag Game/frames`.
+  - `bash scripts/encode_frames.sh` uses the workspace frames directory and falls back to any legacy `app_userdata` cache if present.
 
 Minimal “Learning” Demo
 - Enable `RLEnv.training_mode`, run `pixi run -e train server`, then run the Godot scene. Policy updates online and is saved as `trainer/policy.pt`.
@@ -90,7 +100,7 @@ Shell Script (one command training)
 - Environment overrides for headless tuning (optional):
   - `AI_DISTANCE_REWARD_SCALE`, `AI_SEEKER_TIME_PENALTY`, `AI_WIN_BONUS`, `AI_STEP_TICK_INTERVAL`
   - `AI_TRAIN_DURATION` (seconds to run the headless client before shutting down)
-  - `AI_LOG_TRAJECTORIES=1` to dump JSONL rollouts for later rendering with `render_trajectory.sh`
+  - `AI_LOG_TRAJECTORIES=1` to dump JSONL rollouts into `data/trajectories` for later rendering with `render_trajectory.sh`
   - Self-play extras: `SELF_PLAY_ROUNDS` (even count of alternating rounds), `SELF_PLAY_DURATION` (seconds per round), `SELF_PLAY_START_ROLE` (`seeker` or `hider`)
 
 Record With GUI

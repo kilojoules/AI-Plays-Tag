@@ -6,6 +6,8 @@ set -euo pipefail
 #        (defaults to high; pass "low" or set AI_RENDER_QUALITY=low for faster preview renders.)
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
+source "$ROOT_DIR/scripts/lib/data_paths.sh"
+ai_ensure_data_dirs
 
 normalize_quality() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
@@ -47,12 +49,13 @@ fi
 
 if [[ -z "${AI_REPLAY_PATH:-}" ]]; then
   echo "Set AI_REPLAY_PATH to a trajectory (user://trajectories/ep_XXXXX.jsonl)." >&2
-  echo "Tip: after training, files are under: \"$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/trajectories\"" >&2
+  echo "Tip: after training, files are under: \"$(ai_trajectories_dir)\"" >&2
   exit 1
 fi
 
 echo "Launching Replay scene with recording enabled (quality: $QUALITY)"
 AI_RENDER_QUALITY="$QUALITY" \
+AI_DATA_ROOT="$AI_DATA_ROOT" \
 AI_RECORD=1 \
 AI_RECORD_FPS=60 \
 "$GODOT_BIN" --path "$ROOT_DIR/godot" "res://scenes/Replay.tscn"

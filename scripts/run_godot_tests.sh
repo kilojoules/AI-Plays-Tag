@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
 
+python3 "$ROOT_DIR/scripts/tests/test_workspace_data.py"
+
 BIN="${GODOT_BIN:-}"
 if [[ -z "$BIN" ]] && command -v godot4 >/dev/null 2>&1; then BIN="godot4"; fi
 if [[ -z "$BIN" ]] && [[ -x "/Applications/Godot.app/Contents/MacOS/Godot" ]]; then BIN="/Applications/Godot.app/Contents/MacOS/Godot"; fi

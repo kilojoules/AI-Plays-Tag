@@ -35,7 +35,7 @@ When a training run or test fails, create a timestamped folder under a new `debu
   - **`godot.log`**: The console output from the Godot engine (especially when run headless).
   - **`metrics.csv`**: The training metrics from `trainer/logs/metrics.csv`.
   - **`policy.pt`**: The saved policy file from `trainer/policy.pt` if one was generated.
-  - **`trajectory.jsonl`**: If `AI_LOG_TRAJECTORIES` was enabled, save the relevant trajectory file from the Godot `app_userdata` directory.
+  - **`trajectory.jsonl`**: If `AI_LOG_TRAJECTORIES` was enabled, save the relevant trajectory file from `data/trajectories` (run `pixi run migrate-user-data` once if older runs live under Godot's `app_userdata`).
   - **`screenshot.png`**: If the failure is visual, a screenshot of the Godot window.
 
 -----
@@ -112,5 +112,4 @@ Commits: # examples
 ```
 
 -----
-
 

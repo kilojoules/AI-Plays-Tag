@@ -1,4 +1,5 @@
 extends Node
+const DataPaths = preload("res://scripts/data_paths.gd")
 
 # Bridges Godot agents with the Python WebSocket server.
 # Usage: add this node to the main scene and set `client_path` to an rl_client.gd node.
@@ -486,11 +487,12 @@ func _open_log() -> void:
             log_trajectories = (low == "1" or low == "true" or low == "yes")
     if not log_trajectories:
         return
-    var dir = DirAccess.open("user://")
-    if dir:
-        dir.make_dir_recursive("trajectories")
-    var fname = "user://trajectories/ep_%05d.jsonl" % episode_id
+    var fname = DataPaths.trajectory_file("ep_%05d.jsonl" % episode_id)
     log_file = FileAccess.open(fname, FileAccess.WRITE)
+    if not log_file:
+        var err = FileAccess.get_open_error()
+        push_error("Failed to open trajectory log %s (err=%s)" % [fname, err])
+        return
     _log_event({"type":"episode_start","episode": episode_id})
 
 func _close_log() -> void:

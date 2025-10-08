@@ -1,4 +1,5 @@
 extends Node3D
+const DataPaths = preload("res://scripts/data_paths.gd")
 
 @export var trajectory_path: String = ""
 @export var speed: float = 1.0
@@ -14,6 +15,7 @@ func _ready() -> void:
     _apply_quality_preset()
     if trajectory_path == "":
         trajectory_path = _find_latest_trajectory()
+    trajectory_path = _resolve_trajectory_path(trajectory_path)
     if trajectory_path == "":
         push_error("Replay: no trajectory found")
         return
@@ -178,18 +180,45 @@ func _configure_light(node_name: String, enable: bool, shadow_enable: bool) -> v
         light.shadow_enabled = enable and shadow_enable
 
 func _find_latest_trajectory() -> String:
-    var dir := DirAccess.open("user://trajectories")
-    if dir == null:
-        return ""
-    dir.list_dir_begin()
-    var best := ""
-    while true:
-        var fn := dir.get_next()
-        if fn == "":
-            break
-        if dir.current_is_dir():
+    var search_dirs: Array[String] = []
+    search_dirs.append(DataPaths.trajectories_dir())
+    var legacy := DataPaths.legacy_trajectory_dirs()
+    for dir_path in legacy:
+        search_dirs.append(dir_path)
+    for dir_path in search_dirs:
+        var dir := DirAccess.open(dir_path)
+        if dir == null:
             continue
-        if fn.ends_with(".jsonl"):
-            best = "user://trajectories/" + fn
-    dir.list_dir_end()
-    return best
+        dir.list_dir_begin()
+        var best_name := ""
+        while true:
+            var fn := dir.get_next()
+            if fn == "":
+                break
+            if dir.current_is_dir():
+                continue
+            if fn.ends_with(".jsonl") and (best_name == "" or fn > best_name):
+                best_name = fn
+        dir.list_dir_end()
+        if best_name != "":
+            return dir_path.path_join(best_name)
+    return ""
+
+func _resolve_trajectory_path(path: String) -> String:
+    var trimmed := path.strip_edges()
+    if trimmed == "":
+        return ""
+    if FileAccess.file_exists(trimmed):
+        return trimmed
+    if trimmed.begins_with("res://") or trimmed.begins_with("user://"):
+        var global := ProjectSettings.globalize_path(trimmed)
+        if FileAccess.file_exists(global):
+            return global
+    var workspace := DataPaths.trajectories_dir().path_join(trimmed)
+    if FileAccess.file_exists(workspace):
+        return workspace
+    for legacy_dir in DataPaths.legacy_trajectory_dirs():
+        var candidate := legacy_dir.path_join(trimmed)
+        if FileAccess.file_exists(candidate):
+            return candidate
+    return trimmed
