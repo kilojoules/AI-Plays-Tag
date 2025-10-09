@@ -1,5 +1,7 @@
 extends Node
 
+const RenderEnv = preload("res://scripts/render_environment.gd")
+
 @export var post_tag_immunity_sec: float = 1.5
 @export var arena_half_size: float = 8.0
 @export var time_limit_sec: float = 10.0
@@ -25,6 +27,7 @@ func _ready() -> void:
         push_warning("No agents found in scene.")
         return
     _apply_physics_materials()
+    _apply_runtime_materials()
     # Default roles before first reset
     seeker_agent = agents[0]
     hider_agent = (agents[1] if agents.size() > 1 else agents[0])
@@ -175,3 +178,37 @@ func _apply_physics_materials() -> void:
                 break
         assert(has_shape, "Missing CollisionShape3D for: %s" % body_name)
     print_rich("[color=lightgreen][Physics][/color] Static colliders validated.")
+
+func _apply_runtime_materials() -> void:
+    if RenderEnv.is_headless():
+        return
+    var root := get_parent()
+    if root == null:
+        return
+    var floor_mesh := root.get_node_or_null("Floor/MeshInstance3D")
+    var floor_mat: Material = load("res://materials/floor_tiles.tres")
+    if floor_mesh and floor_mesh is MeshInstance3D and floor_mat:
+        (floor_mesh as MeshInstance3D).material_override = null
+        (floor_mesh as MeshInstance3D).set_surface_override_material(0, floor_mat)
+    var wall_mat: Material = load("res://materials/wall_panels.tres")
+    var wall_paths := [
+        "WallN/MeshN",
+        "WallS/MeshS",
+        "WallE/MeshE",
+        "WallW/MeshW",
+    ]
+    if wall_mat:
+        for path in wall_paths:
+            var mesh := root.get_node_or_null(path)
+            if mesh and mesh is MeshInstance3D:
+                (mesh as MeshInstance3D).material_override = null
+                (mesh as MeshInstance3D).set_surface_override_material(0, wall_mat)
+    var env_node := root.get_node_or_null("WorldEnvironment")
+    if env_node and env_node is WorldEnvironment:
+        var env := (env_node as WorldEnvironment).environment
+        if env:
+            env.ssao_enabled = true
+            env.ssr_enabled = true
+            env.sdfgi_enabled = true
+            env.glow_enabled = true
+            env.volumetric_fog_enabled = true

@@ -7,8 +7,6 @@
 [ext_resource type="Script" path="res://scripts/rl_env.gd" id="5_0"]
 [ext_resource type="Script" path="res://scripts/recorder.gd" id="6_0"]
 [ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="7_0"]
-[ext_resource type="Material" path="res://materials/floor_tiles.tres" id="8_0"]
-[ext_resource type="Material" path="res://materials/wall_panels.tres" id="9_0"]
 [ext_resource type="Script" path="res://scripts/time_board.gd" id="10_0"]
 
 [sub_resource type="PlaneMesh" id="4_0"]
@@ -52,25 +50,25 @@ auto_exposure_enabled = true
 auto_exposure_min_luminance = 0.4
 auto_exposure_max_luminance = 2.2
 auto_exposure_speed = 1.5
-ssao_enabled = true
+ssao_enabled = false
 ssao_radius = 0.55
 ssao_intensity = 1.3
 ssao_power = 1.2
 ssao_detail = 0.6
-ssr_enabled = true
+ssr_enabled = false
 ssr_roughness_threshold = 0.2
 ssr_depth_tolerance = 0.2
-sdfgi_enabled = true
+sdfgi_enabled = false
 sdfgi_cascades = 2
 sdfgi_min_cell_size = 0.75
 sdfgi_energy = 1.0
 sdfgi_use_occlusion = true
-glow_enabled = true
+glow_enabled = false
 glow_strength = 0.75
 glow_intensity = 0.7
 glow_bloom = 0.25
 glow_hdr_bleed_threshold = 1.2
-volumetric_fog_enabled = true
+volumetric_fog_enabled = false
 volumetric_fog_density = 0.015
 volumetric_fog_albedo = Color(0.6, 0.65, 0.72, 1)
 volumetric_fog_emission = Color(0.0, 0.0, 0.0, 1)
@@ -139,7 +137,6 @@ collision_mask = 1
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Floor"]
 mesh = SubResource("4_0")
-surface_material_override/0 = ExtResource("8_0")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
 shape = SubResource("5_0")
@@ -185,7 +182,6 @@ translation = Vector3(0, 1, -15)
 [node name="MeshN" type="MeshInstance3D" parent="WallN"]
 mesh = SubResource("6_0")
 scale = Vector3(30, 2, 0.4)
-material_override = ExtResource("9_0")
 
 [node name="CollisionN" type="CollisionShape3D" parent="WallN"]
 shape = SubResource("9_0")
@@ -198,7 +194,6 @@ translation = Vector3(0, 1, 15)
 [node name="MeshS" type="MeshInstance3D" parent="WallS"]
 mesh = SubResource("6_0")
 scale = Vector3(30, 2, 0.4)
-material_override = ExtResource("9_0")
 
 [node name="CollisionS" type="CollisionShape3D" parent="WallS"]
 shape = SubResource("9_0")
@@ -212,7 +207,6 @@ translation = Vector3(15, 1, 0)
 [node name="MeshE" type="MeshInstance3D" parent="WallE"]
 mesh = SubResource("6_0")
 scale = Vector3(0.4, 2, 30)
-material_override = ExtResource("9_0")
 rotation = Vector3(0, 1.5708, 0)
 
 [node name="CollisionE" type="CollisionShape3D" parent="WallE"]
@@ -227,7 +221,6 @@ translation = Vector3(-15, 1, 0)
 [node name="MeshW" type="MeshInstance3D" parent="WallW"]
 mesh = SubResource("6_0")
 scale = Vector3(0.4, 2, 30)
-material_override = ExtResource("9_0")
 rotation = Vector3(0, 1.5708, 0)
 
 [node name="CollisionW" type="CollisionShape3D" parent="WallW"]

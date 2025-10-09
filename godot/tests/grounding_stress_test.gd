@@ -1,5 +1,7 @@
 extends Node3D
 
+const HeadlessFallbacks = preload("res://scripts/headless_material_fallbacks.gd")
+
 const TEST_DURATION_SEC := 20.0
 var agents: Array = []
 var failures: int = 0
@@ -16,6 +18,7 @@ func _ready() -> void:
     _strip_runtime_nodes(world_scene)
     add_child(world_scene)
     await get_tree().process_frame
+    HeadlessFallbacks.apply(world_scene)
     agents = get_tree().get_nodes_in_group("agents")
     if agents.is_empty():
         push_error("[StressTest] No agents found in instantiated scene.")

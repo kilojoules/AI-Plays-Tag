@@ -1,5 +1,7 @@
 extends Node
 
+const HeadlessFallbacks = preload("res://scripts/headless_material_fallbacks.gd")
+
 # Simple headless test runner for Godot 4.
 # Usage:
 #   GODOT_BIN=/path/to/Godot --headless --script res://tests/run_tests.gd
@@ -24,6 +26,7 @@ func _get_main_scene_instance() -> Node:
     get_tree().root.call_deferred("add_child", inst)
     await get_tree().process_frame
     await get_tree().physics_frame
+    HeadlessFallbacks.apply(inst)
     return inst
 
 func _assert(cond: bool, msg: String) -> void:

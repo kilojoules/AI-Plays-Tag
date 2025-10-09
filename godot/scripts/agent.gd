@@ -1,5 +1,8 @@
 extends CharacterBody3D
 
+const RenderEnv = preload("res://scripts/render_environment.gd")
+const AGENT_SHADER_PATH := "res://materials/agent_body.tres"
+
 @export var speed: float = 8.0
 @export var acceleration: float = 20.0
 @export var deceleration: float = 30.0
@@ -31,6 +34,7 @@ func _ready() -> void:
     add_to_group("agents")
     if tag_area:
         tag_area.body_entered.connect(_on_tag_area_body_entered)
+    _maybe_apply_runtime_materials()
     # Neutral default; GameManager will set role colors via set_it()
     _apply_color(Color(0.7, 0.7, 0.7))
     # Improve ground contact
@@ -273,6 +277,8 @@ func _apply_color(c: Color) -> void:
             sm.emission_enabled = true
             sm.emission = c * 0.35
             sm.emission_energy_multiplier = 1.2
+        elif mat is ShaderMaterial:
+            _tint_shader_material(mat as ShaderMaterial, c)
     # Tint trail particles to match role
     var tp := get_node_or_null("TrailParticles")
     if tp and tp is GPUParticles3D:
@@ -282,6 +288,40 @@ func _apply_color(c: Color) -> void:
     var hl := get_node_or_null("HaloLight")
     if hl and hl is OmniLight3D:
         (hl as OmniLight3D).light_color = c
+
+func _maybe_apply_runtime_materials() -> void:
+    if RenderEnv.is_headless():
+        return
+    var shader_res: Material = load(AGENT_SHADER_PATH)
+    if shader_res == null:
+        return
+    if shader_res is ShaderMaterial:
+        _assign_material_to_mesh(mesh, (shader_res as ShaderMaterial).duplicate())
+        _assign_material_to_mesh(get_node_or_null("FootL"), (shader_res as ShaderMaterial).duplicate())
+        _assign_material_to_mesh(get_node_or_null("FootR"), (shader_res as ShaderMaterial).duplicate())
+    else:
+        _assign_material_to_mesh(mesh, shader_res.duplicate())
+        _assign_material_to_mesh(get_node_or_null("FootL"), shader_res.duplicate())
+        _assign_material_to_mesh(get_node_or_null("FootR"), shader_res.duplicate())
+
+func _assign_material_to_mesh(node: Node, material: Material) -> void:
+    if node == null:
+        return
+    if not (node is MeshInstance3D):
+        return
+    var mesh_instance := node as MeshInstance3D
+    mesh_instance.material_override = null
+    mesh_instance.set_surface_override_material(0, material)
+
+func _tint_shader_material(mat: ShaderMaterial, color: Color) -> void:
+    var base := Vector3(color.r, color.g, color.b)
+    var accent := color.lerp(Color(1, 1, 1), 0.35)
+    var rim := color.lerp(Color(1, 1, 1), 0.5)
+    mat.set_shader_parameter("base_color", base)
+    mat.set_shader_parameter("accent_color", Vector3(accent.r, accent.g, accent.b))
+    mat.set_shader_parameter("rim_color", Vector3(rim.r, rim.g, rim.b))
+    if mat.shader and mat.shader.has_uniform("emission_strength"):
+        mat.set_shader_parameter("emission_strength", 1.8)
 
 # (ground clamp removed; replaced with thicker floor collider)
 

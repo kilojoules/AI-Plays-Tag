@@ -9,6 +9,7 @@ BIN="${GODOT_BIN:-}"
 if [[ -z "$BIN" ]] && command -v godot4 >/dev/null 2>&1; then BIN="godot4"; fi
 if [[ -z "$BIN" ]] && [[ -x "/Applications/Godot.app/Contents/MacOS/Godot" ]]; then BIN="/Applications/Godot.app/Contents/MacOS/Godot"; fi
 if [[ -z "$BIN" ]] && [[ -x "/Users/julianquick/Downloads/Godot.app/Contents/MacOS/Godot" ]]; then BIN="/Users/julianquick/Downloads/Godot.app/Contents/MacOS/Godot"; fi
+if [[ -z "$BIN" ]] && [[ -x "$ROOT_DIR/Godot.app/Contents/MacOS/Godot" ]]; then BIN="$ROOT_DIR/Godot.app/Contents/MacOS/Godot"; fi
 if [[ -z "$BIN" ]]; then
   echo "Set GODOT_BIN or install godot4 in PATH" >&2
   exit 1
