@@ -45,28 +45,8 @@ When a training run or test fails, create a timestamped folder under a new `debu
   - A central task list should be maintained in `TODO.md` at the project root.
   - Choose one task at a time from `TODO.md`.
   - When you begin a task, mark it in-place with `- [I] <task description>`.
-  - Mark it `- [x]` **only after your changes are merged** back to the `main` branch.
-  - If you cannot finish a task, leave the checkbox as `- [I]`, add a comment detailing the blocker, keep your feature branch alive, and ask for guidance.
+  - If you cannot finish a task, leave the checkbox as `- [I]`, add a comment detailing the blocker, keep your feature alive, and ask for guidance.
 
------
-
-## Branching Strategy
-
-Use git status at the begining of each session to understand the current status. 
-
-We want to have lots of git commits on record. We should be making many new commits and constantly tracking our progress with git.
-
-  - Create a new feature branch for each task.
-  - **Naming Convention**: Use a descriptive name like `feature/add-new-reward` or `bugfix/fix-fall-through`.
-  - **Commits**: Make small, atomic commits. Reference the TODO item in your commit messages.
-  - **Keep Branches Updated**: Before pushing, and especially before creating a pull request, rebase your branch on the latest `main` branch to incorporate recent changes:
-    ```bash
-    # While on your feature branch
-    git fetch origin
-    git rebase origin/main
-    ```
-
-see CONTRIBUTING.md for full git instructions
 
 -----
 ## Testing Strategy
@@ -76,10 +56,8 @@ see CONTRIBUTING.md for full git instructions
 
 ## Merging And Completion
 
-  - Ensure your branch is up-to-date with `main` and all validation checks pass.
-  - Create a Pull Request (PR) to merge your branch into `main`. Use the PR template provided below.
-  - After the PR is reviewed and merged, delete your feature branch.
-  - Finally, update the status of your task in `TODO.md` from `- [I]` to `- [x]`.
+  - Ensure your all validation checks pass.
+  - Update the status of your task in `TODO.md` from `- [I]` to `- [x]`.
 
 -----
 

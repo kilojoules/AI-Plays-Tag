@@ -142,13 +142,32 @@ func _physics_process(_delta: float) -> void:
                         rew += win_bonus
                     if tag_target == a:
                         rew -= abs(win_bonus)
+                var info := {
+                    "agent": str(n),
+                    "role": ("seeker" if is_seeker else "hider"),
+                    "distance_to_other": cur_distance,
+                    "progress": progress,
+                    "time_elapsed": time_elapsed,
+                    "steps_in_episode": steps_in_ep,
+                    "episode": episode_id,
+                }
+                if give_tag_bonus:
+                    info["terminal_reason"] = "tag"
+                    info["winner"] = "seeker"
+                    if tag_attacker:
+                        info["tag_attacker"] = str(tag_attacker.name)
+                    if tag_target:
+                        info["tag_target"] = str(tag_target.name)
+                elif done:
+                    info["terminal_reason"] = "timeout"
+                    info["winner"] = "hider"
                 trans_array.append({
                     "obs": obs_prev,
                     "action": act_prev,
                     "reward": rew,
                     "next_obs": obs_next,
                     "done": done or give_tag_bonus,
-                    "info": {"agent": str(n)}
+                    "info": info
                 })
                 # Update last obs for next step
                 last_obs[n] = obs_next

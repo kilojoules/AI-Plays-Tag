@@ -9,7 +9,9 @@ import asyncio
 import json
 import math
 import os
+import platform
 import random
+import sys
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
@@ -39,16 +41,28 @@ class Trainer:
         self.act_cache: Dict[str, Dict[str, Any]] = {}
         self.updates_done: Dict[str, int] = {role: 0 for role in self.roles}
         self.global_updates = 0
-        self.current_ep_rewards: List[float] = []
         self.episodes_logged = 0
-        self.log_dir = os.path.join(os.path.dirname(__file__), "logs")
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.checkpoint_dir = os.path.join(self.log_dir, "checkpoints")
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.metadata_env_keys = [
+            "TRAIN_APPROACH",
+            "TRAIN_VARIANT",
+            "TRAIN_RUN_ID",
+            "AI_IS_IT",
+            "AI_CONTROL_ALL_AGENTS",
+            "AI_DISTANCE_REWARD_SCALE",
+            "AI_SEEKER_TIME_PENALTY",
+            "AI_WIN_BONUS",
+            "AI_MAX_STEPS_PER_EPISODE",
+            "AI_STEP_TICK_INTERVAL",
+            "SELF_PLAY_ROUNDS",
+            "SELF_PLAY_DURATION",
+        ]
+        self._init_run_context()
         self.max_checkpoints = int(os.environ.get("PPO_MAX_CHECKPOINTS", "8"))
+        self._reset_episode_stats()
         self.metrics_csv = os.path.join(self.log_dir, "metrics.csv")
         self.metrics_columns = [
             "episode",
+            "episode_id",
             "reward_mean",
             "reward_sum",
             "steps",
@@ -57,11 +71,22 @@ class Trainer:
             "advantage_std",
             "policy_loss",
             "value_loss",
+            "seeker_reward_sum",
+            "seeker_reward_mean",
+            "seeker_steps",
+            "seeker_avg_distance",
+            "hider_reward_sum",
+            "hider_reward_mean",
+            "hider_steps",
+            "hider_avg_distance",
+            "winner",
+            "terminal_reason",
+            "duration_sec",
         ]
         self._prepare_metrics_csv()
         try:
             from torch.utils.tensorboard import SummaryWriter  # type: ignore
-            self.writer = SummaryWriter(self.log_dir)
+            self.writer = SummaryWriter(self.tb_dir)
         except Exception:
             self.writer = None
         self.lock = threading.Lock()
@@ -84,6 +109,70 @@ class Trainer:
             "val": [],
             "next_val": [],
         }
+
+    def _init_run_context(self) -> None:
+        base_dir = os.path.dirname(__file__)
+        self.logs_root = os.path.join(base_dir, "logs")
+        os.makedirs(self.logs_root, exist_ok=True)
+        self.approach = os.environ.get("TRAIN_APPROACH") or os.environ.get("TRAIN_VARIANT") or "default"
+        self.run_id = os.environ.get("TRAIN_RUN_ID") or datetime.now().strftime("%Y%m%d_%H%M%S")
+        runs_root = os.path.join(self.logs_root, "runs", self.approach)
+        os.makedirs(runs_root, exist_ok=True)
+        self.log_dir = os.path.join(runs_root, self.run_id)
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.checkpoint_dir = os.path.join(self.log_dir, "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.tb_dir = os.path.join(self.log_dir, "tensorboard")
+        os.makedirs(self.tb_dir, exist_ok=True)
+        self.metadata_path = os.path.join(self.log_dir, "metadata.json")
+        self.latest_marker_path = os.path.join(self.logs_root, "latest_run.txt")
+        self.run_started_at = datetime.utcnow().isoformat() + "Z"
+        self._write_metadata()
+        self._write_latest_marker()
+
+    def _collect_run_metadata(self) -> Dict[str, Any]:
+        meta: Dict[str, Any] = {
+            "run_id": self.run_id,
+            "approach": self.approach,
+            "started_at": self.run_started_at,
+            "batch_target": self.batch_target,
+            "gamma": self.gamma,
+            "lambda": self.lam,
+        }
+        env_snapshot = {k: os.environ.get(k, "") for k in self.metadata_env_keys if os.environ.get(k)}
+        if env_snapshot:
+            meta["env"] = env_snapshot
+        meta["platform"] = {
+            "python": sys.version,
+            "platform": platform.platform(),
+        }
+        if torch is not None:
+            meta["pytorch_version"] = getattr(torch, "__version__", "")
+        return meta
+
+    def _write_metadata(self) -> None:
+        data = self._collect_run_metadata()
+        try:
+            with open(self.metadata_path, "w") as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
+
+    def _write_latest_marker(self) -> None:
+        try:
+            with open(self.latest_marker_path, "w") as f:
+                f.write(self.log_dir + "\n")
+        except OSError:
+            pass
+
+    def _reset_episode_stats(self) -> None:
+        self.current_ep_rewards: Dict[str, List[float]] = {role: [] for role in self.roles}
+        self.current_ep_steps: Dict[str, int] = {role: 0 for role in self.roles}
+        self.current_ep_distances: Dict[str, List[float]] = {role: [] for role in self.roles}
+        self.current_ep_duration: float = 0.0
+        self.current_ep_winner: str = ""
+        self.current_ep_terminal_reason: str = ""
+        self.current_ep_episode_id: int | None = None
 
     def ensure_policy(self, obs_dim: int, act_dim: int = 3) -> None:
         if torch is None or PPOConfig is None or PPOAgent is None:
@@ -138,11 +227,22 @@ class Trainer:
         self.act_cache[cache_key] = {"logp": logp, "value": value, "role": role}
         return action, logp, value
 
-    def add_transition(self, obs: List[float], act: List[float], rew: float, done: bool) -> None:
+    def add_transition(
+        self,
+        obs: List[float],
+        act: List[float],
+        rew: float,
+        done: bool,
+        next_obs: Any = None,
+        info: Dict[str, Any] | None = None,
+        agent_name: str | None = None,
+    ) -> None:
         role = self._role_from_obs(obs)
-        self._store_transition(role, obs, act, rew, done, next_obs=None, agent_name=None)
+        if self._store_transition(role, obs, act, rew, done, next_obs, agent_name, info):
+            self.log_episode()
 
     def add_transition_batch(self, transitions: List[Dict[str, Any]]) -> None:
+        episode_finished = False
         for tr in transitions:
             try:
                 obs = tr.get("obs")
@@ -156,9 +256,12 @@ class Trainer:
                     agent_name = str(info.get("agent", ""))
                 if isinstance(obs, list) and isinstance(action, list):
                     role = self._role_from_obs(obs)
-                    self._store_transition(role, obs, action, reward, done, next_obs, agent_name)
+                    if self._store_transition(role, obs, action, reward, done, next_obs, agent_name, info):
+                        episode_finished = True
             except Exception:
                 continue
+        if episode_finished:
+            self.log_episode()
 
     def maybe_update(self) -> None:
         if not self.policies:
@@ -206,18 +309,38 @@ class Trainer:
                 self.writer.add_scalar(f"{role}/entropy", info["entropy"], step)
 
     def log_episode(self) -> None:
-        if len(self.current_ep_rewards) == 0:
+        total_samples = sum(len(self.current_ep_rewards.get(role, [])) for role in self.roles)
+        if total_samples == 0:
             return
-        ep_sum = float(np.sum(self.current_ep_rewards))
-        ep_mean = float(np.mean(self.current_ep_rewards))
-        ep_steps = int(len(self.current_ep_rewards))
+        ep_sum = float(
+            sum(float(np.sum(self.current_ep_rewards.get(role, []))) for role in self.roles if self.current_ep_rewards.get(role))
+        )
+        ep_mean = float(ep_sum / total_samples) if total_samples > 0 else 0.0
+        ep_steps = int(max(self.current_ep_steps.values()) if self.current_ep_steps else total_samples)
         self.episodes_logged += 1
         updates_total = sum(self.updates_done.values())
+        seeker_rewards = self.current_ep_rewards.get("seeker", [])
+        hider_rewards = self.current_ep_rewards.get("hider", [])
+        seeker_sum = float(np.sum(seeker_rewards)) if seeker_rewards else 0.0
+        hider_sum = float(np.sum(hider_rewards)) if hider_rewards else 0.0
+        seeker_mean = float(np.mean(seeker_rewards)) if seeker_rewards else 0.0
+        hider_mean = float(np.mean(hider_rewards)) if hider_rewards else 0.0
+        seeker_steps = int(self.current_ep_steps.get("seeker", len(seeker_rewards)))
+        hider_steps = int(self.current_ep_steps.get("hider", len(hider_rewards)))
+        seeker_distances = self.current_ep_distances.get("seeker", [])
+        hider_distances = self.current_ep_distances.get("hider", [])
+        seeker_avg_distance = float(np.mean(seeker_distances)) if seeker_distances else 0.0
+        hider_avg_distance = float(np.mean(hider_distances)) if hider_distances else 0.0
+        duration_sec = float(self.current_ep_duration)
+        episode_id = self.current_ep_episode_id if self.current_ep_episode_id is not None else self.episodes_logged
+        winner = self.current_ep_winner
+        terminal_reason = self.current_ep_terminal_reason
         with open(self.metrics_csv, "a") as f:
             f.write(
                 ",".join(
                     [
                         str(self.episodes_logged),
+                        str(episode_id),
                         f"{ep_mean}",
                         f"{ep_sum}",
                         f"{ep_steps}",
@@ -226,6 +349,17 @@ class Trainer:
                         f"{self.last_adv_std}",
                         f"{self.last_policy_loss}",
                         f"{self.last_value_loss}",
+                        f"{seeker_sum}",
+                        f"{seeker_mean}",
+                        f"{seeker_steps}",
+                        f"{seeker_avg_distance}",
+                        f"{hider_sum}",
+                        f"{hider_mean}",
+                        f"{hider_steps}",
+                        f"{hider_avg_distance}",
+                        winner or "",
+                        terminal_reason or "",
+                        f"{duration_sec}",
                     ]
                 )
                 + "\n"
@@ -234,7 +368,9 @@ class Trainer:
             self.writer.add_scalar("episode/reward_mean", ep_mean, self.episodes_logged)
             self.writer.add_scalar("episode/reward_sum", ep_sum, self.episodes_logged)
             self.writer.add_scalar("episode/steps", ep_steps, self.episodes_logged)
-        self.current_ep_rewards = []
+            self.writer.add_scalar("episode/seeker_reward_sum", seeker_sum, self.episodes_logged)
+            self.writer.add_scalar("episode/hider_reward_sum", hider_sum, self.episodes_logged)
+        self._reset_episode_stats()
         self.act_cache.clear()
 
     def _prepare_metrics_csv(self) -> None:
@@ -267,7 +403,9 @@ class Trainer:
         done: bool,
         next_obs: Any,
         agent_name: Any,
-    ) -> None:
+        info: Any,
+    ) -> bool:
+        done_flag = bool(done)
         cache = self._pull_cached_act(str(agent_name) if agent_name else "")
         if cache is not None:
             logp = cache.get("logp", 0.0)
@@ -277,6 +415,7 @@ class Trainer:
         next_value = 0.0
         if not done and isinstance(next_obs, list) and role in self.policies:
             next_value = self.policies[role].value(np.array(next_obs, dtype=np.float32))
+        info_dict: Dict[str, Any] = info if isinstance(info, dict) else {}
         with self.lock:
             buf = self.buffers.setdefault(role, self._make_buffer())
             buf["obs"].append(list(obs))
@@ -286,11 +425,38 @@ class Trainer:
             buf["logp"].append(float(logp))
             buf["val"].append(float(value))
             buf["next_val"].append(float(0.0 if done else next_value))
-            self.current_ep_rewards.append(float(rew))
-        if done:
+            rewards_list = self.current_ep_rewards.setdefault(role, [])
+            rewards_list.append(float(rew))
+            self.current_ep_steps[role] = self.current_ep_steps.get(role, 0) + 1
+            if info_dict:
+                dist = info_dict.get("distance_to_other")
+                if dist is not None:
+                    try:
+                        self.current_ep_distances.setdefault(role, []).append(float(dist))
+                    except (TypeError, ValueError):
+                        pass
+                time_elapsed = info_dict.get("time_elapsed")
+                if time_elapsed is not None:
+                    try:
+                        self.current_ep_duration = max(self.current_ep_duration, float(time_elapsed))
+                    except (TypeError, ValueError):
+                        pass
+                if not self.current_ep_winner:
+                    winner = info_dict.get("winner")
+                    if isinstance(winner, str):
+                        self.current_ep_winner = winner
+                if not self.current_ep_terminal_reason:
+                    terminal_reason = info_dict.get("terminal_reason")
+                    if isinstance(terminal_reason, str):
+                        self.current_ep_terminal_reason = terminal_reason
+                if self.current_ep_episode_id is None:
+                    episode_id = info_dict.get("episode")
+                    if isinstance(episode_id, (int, float)):
+                        self.current_ep_episode_id = int(episode_id)
+        if done_flag:
             if agent_name:
                 self.act_cache.pop(str(agent_name), None)
-            self.log_episode()
+        return done_flag
 
     def _pull_cached_act(self, agent_name: str) -> Dict[str, Any] | None:
         key = agent_name or "__single__"
@@ -452,7 +618,11 @@ async def handle(ws: websockets.WebSocketServerProtocol):
             if isinstance(info, dict):
                 agent_name = str(info.get("agent", ""))
             if isinstance(obs, list) and isinstance(action, list):
-                trainer._store_transition(trainer._role_from_obs(obs), obs, action, reward, done, next_obs, agent_name)
+                finished = trainer._store_transition(
+                    trainer._role_from_obs(obs), obs, action, reward, done, next_obs, agent_name, info
+                )
+                if finished:
+                    trainer.log_episode()
                 trainer.maybe_update()
         elif typ == "transition_batch":
             transitions = data.get("transitions", [])

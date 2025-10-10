@@ -41,10 +41,12 @@ Python Environment (Pixi preferred)
 - Install Pixi (see https://pixi.sh for platform-specific install), then from repo root:
   - `pixi run -e default server`  # runs `trainer/server.py` with Python 3.11, websockets, numpy
   - `pixi run -e train server`    # starts the server and loads `policy.pt` for inference
-  - `pixi run -e train plot`      # regenerate charts from `trainer/logs/metrics.csv`
+  - `pixi run -e train plot`      # render charts for the latest training run (writes to that run's folder)
   - `pixi run tests`              # headless Godot test suite (uses `scripts/run_godot_tests.sh`)
   - `pixi run collect-debug`      # gather logs/metrics into `debug/<timestamp>/`
   - `pixi run eval-episode`       # run a single headless evaluation, log the trajectory, and render a path PNG
+  - `pixi run monitor`            # build dashboards for the most recent run of each approach
+  - `pixi run monitor-all`        # aggregate charts across every recorded run
 
 Pip (optional, server-only)
 - If you only need the WebSocket server (no PyTorch), you can also do:
@@ -65,6 +67,12 @@ Runtime Data Directory
 - Shell helpers (`scripts/lib/data_paths.sh`) expose the shared paths so scripts and Godot stay in sync.
 - Override `AI_DATA_ROOT=/custom/path` when you need an alternate workspace.
 - Run `pixi run migrate-user-data` once to copy existing `app_userdata` trajectories/frames into `data/`.
+
+Training Monitoring
+- Every training session is grouped under `trainer/logs/runs/<approach>/<run_id>/`. The approach defaults to the training mode (`live-seeker`, `live-hider`, `self-play`), and you can override it with `TRAIN_APPROACH=custom-label bash scripts/train.sh ...`.
+- Each run directory contains `metrics.csv` (per-episode stats, now including per-role rewards, win outcomes, and episode duration), rotating policy checkpoints, TensorBoard logs, and a `metadata.json` snapshot of environment overrides.
+- `pixi run monitor` produces refreshed dashboards (`charts/*.png`) and a `run_overview.csv` summarising the latest run per approach. `pixi run monitor-all` compares every stored run for side-by-side analysis.
+- `pixi run -e train plot` remains a quick way to generate charts for a specific run; pass `--output-dir <path>` to save them outside the run directory if you need ad-hoc reports.
 
 Recording an Animation (Open-Source)
 - Add a `Node` to the scene and attach `scripts/recorder.gd`.
@@ -88,7 +96,7 @@ Debug Artifacts
 - `bash scripts/train.sh live-seeker` and `live-hider` now stream Godot/server logs to `debug/<timestamp>/` dirs and automatically snapshot metrics, policies, and encodes.
 - Use `bash scripts/collect_debug_artifacts.sh [dest]` (or `pixi run collect-debug`) to bundle logs manually; pass `--server-log/--godot-log` to add extra files.
 - Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
-- Trainer metrics now track advantage statistics and PPO losses; rerun `pixi run -e train plot` to render the new charts (`advantage_mean.png`, `policy_loss.png`, etc.).
+- Trainer metrics now record PPO diagnostics alongside per-role rewards, win outcomes, and episode duration. Use `pixi run monitor` (or `pixi run -e train plot --output-dir <dir>`) to regenerate reward/win-rate charts when triaging a run.
 - Self-play runs also capture `self_play_rounds.csv` and per-round `godot_round*.log` files inside the debug directory for postmortem analysis.
 
 Shell Script (one command training)

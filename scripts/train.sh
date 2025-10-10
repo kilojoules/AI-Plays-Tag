@@ -27,6 +27,11 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || abort "Missing required command:
 
 start_server_bg() {
   echo "[train.sh] Starting training server (Pixi env: train) ..."
+  local approach="${TRAIN_APPROACH:-$MODE}"
+  export TRAIN_RUN_ID="$RUN_ID"
+  if [[ -z "${TRAIN_APPROACH:-}" ]]; then
+    export TRAIN_APPROACH="$approach"
+  fi
   # If port already in use, skip starting a duplicate server
   if lsof -i TCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
     echo "[train.sh] Port $PORT already in use; assuming server is running."
@@ -36,7 +41,11 @@ start_server_bg() {
   echo "[train.sh] Tip: run 'tail -f $SERVER_LOG_PATH' for live logs"
   (
     cd "$ROOT_DIR"
-    exec pixi run -e train server
+    exec env \
+      TRAIN_RUN_ID="$RUN_ID" \
+      TRAIN_APPROACH="$approach" \
+      TRAIN_VARIANT="$MODE" \
+      pixi run -e train server
   ) >"$SERVER_LOG_PATH" 2>&1 &
   SERVER_PID=$!
   echo "$SERVER_PID" > "$ROOT_DIR/.server.pid"

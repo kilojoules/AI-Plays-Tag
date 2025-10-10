@@ -7,3 +7,7 @@
 - [x] Implement checkpoints/rollbacks for policy updates so failed runs can be debugged safely. *(policies snapshot before PPO updates, roll back on NaN/KL spikes, and persist rotating checkpoints & legacy copies).*
 
 - [x] Develop self-play training pipeline (Codex completed 2025-10-07).
+- [x] Teach `trainer/metrics_from_trajectories.py` (and related helpers) to look inside the workspace data directory by default while still allowing custom overrides.
+- [x] Add regression coverage to ensure training/eval scripts can find trajectories after the storage move (Pixi task or unit test).
+- [x] Develop a comprehensive training monitoring suite for multi-approach hider/seeker experiments (metrics aggregation, dashboards, comparisons).
+- [ ] Add automated coverage (unit + CLI smoke) for the monitoring suite and wire summary regressions into CI.
