@@ -67,6 +67,7 @@ When a training run or test fails, create a timestamped folder under a new `debu
   - **Naming**: `LLM_Logs/YYYYMMDD_HHmmss_<feature_slug>.log`
   - Include the following information in your log:
   - Do not delete any mp4 files or commit them to git without first confirming with the user
+  - All file changes should be explained with git commits
 
 <!-- end list -->
 
