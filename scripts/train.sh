@@ -10,6 +10,15 @@ MODE=${1:-live-seeker}
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
 source "$ROOT_DIR/scripts/lib/data_paths.sh"
 ai_ensure_data_dirs
+TRAIN_USE_PIXI="${TRAIN_USE_PIXI:-1}"
+TRAIN_ENV_DIR="${TRAIN_ENV_DIR:-$ROOT_DIR/.pixi/envs/train}"
+TRAIN_BIN_DIR="${TRAIN_BIN_DIR:-$TRAIN_ENV_DIR/bin}"
+TRAIN_PYTHON="${TRAIN_PYTHON:-$TRAIN_BIN_DIR/python}"
+if [[ "$TRAIN_USE_PIXI" != "0" ]]; then
+  echo "[train.sh] Using Pixi to execute train environment tasks."
+else
+  echo "[train.sh] Pixi execution disabled (TRAIN_USE_PIXI=0); using binaries under $TRAIN_BIN_DIR"
+fi
 PORT=8765
 RUN_ID="${TRAIN_RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 DEBUG_DIR="$ROOT_DIR/debug/$RUN_ID"
@@ -41,11 +50,22 @@ start_server_bg() {
   echo "[train.sh] Tip: run 'tail -f $SERVER_LOG_PATH' for live logs"
   (
     cd "$ROOT_DIR"
-    exec env \
-      TRAIN_RUN_ID="$RUN_ID" \
-      TRAIN_APPROACH="$approach" \
-      TRAIN_VARIANT="$MODE" \
-      pixi run -e train server
+    if [[ "$TRAIN_USE_PIXI" != "0" ]]; then
+      exec env \
+        TRAIN_RUN_ID="$RUN_ID" \
+        TRAIN_APPROACH="$approach" \
+        TRAIN_VARIANT="$MODE" \
+        pixi run -e train server
+    else
+      if [[ ! -x "$TRAIN_PYTHON" ]]; then
+        abort "TRAIN_PYTHON not found at $TRAIN_PYTHON (set TRAIN_USE_PIXI=1 or point TRAIN_PYTHON to Pixi env python)."
+      fi
+      PATH="$TRAIN_BIN_DIR:$PATH" exec env \
+        TRAIN_RUN_ID="$RUN_ID" \
+        TRAIN_APPROACH="$approach" \
+        TRAIN_VARIANT="$MODE" \
+        "$TRAIN_PYTHON" trainer/server.py
+    fi
   ) >"$SERVER_LOG_PATH" 2>&1 &
   SERVER_PID=$!
   echo "$SERVER_PID" > "$ROOT_DIR/.server.pid"
@@ -220,9 +240,12 @@ make_video_from_frames() {
   fi
   local FFMPEG_BIN="ffmpeg"
   if ! command -v ffmpeg >/dev/null 2>&1; then
-    if command -v pixi >/dev/null 2>&1; then
+    if [[ "$TRAIN_USE_PIXI" != "0" ]] && command -v pixi >/dev/null 2>&1; then
       FFMPEG_BIN="pixi run -e train ffmpeg"
       echo "[train.sh] Using ffmpeg from Pixi environment"
+    elif [[ -x "$TRAIN_BIN_DIR/ffmpeg" ]]; then
+      FFMPEG_BIN="$TRAIN_BIN_DIR/ffmpeg"
+      echo "[train.sh] Using ffmpeg from TRAIN_BIN_DIR ($TRAIN_BIN_DIR)"
     else
       echo "[train.sh] ffmpeg not found; skipping video encoding. Frames are in: $frames_dir"
       return 0
@@ -256,9 +279,17 @@ trap cleanup EXIT
 
 case "$MODE" in
   live-seeker)
-    need_cmd pixi
-    echo "[train.sh] Pre-warming Pixi environment (train) ..."
-    ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    if [[ "$TRAIN_USE_PIXI" != "0" ]]; then
+      need_cmd pixi
+      echo "[train.sh] Pre-warming Pixi environment (train) ..."
+      ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    else
+      if [[ ! -x "$TRAIN_PYTHON" ]]; then
+        abort "TRAIN_PYTHON not found at $TRAIN_PYTHON (set TRAIN_USE_PIXI=1 or point TRAIN_PYTHON to Pixi env python)."
+      fi
+      echo "[train.sh] Using Pixi env binaries directly from $TRAIN_BIN_DIR"
+      ( cd "$ROOT_DIR" && PATH="$TRAIN_BIN_DIR:$PATH" "$TRAIN_PYTHON" -c "import sys" )
+    fi
     start_server_bg
     wait_for_port
     run_godot_headless "seeker"
@@ -267,9 +298,17 @@ case "$MODE" in
     COLLECTED_DEBUG=1
     ;;
   live-hider)
-    need_cmd pixi
-    echo "[train.sh] Pre-warming Pixi environment (train) ..."
-    ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    if [[ "$TRAIN_USE_PIXI" != "0" ]]; then
+      need_cmd pixi
+      echo "[train.sh] Pre-warming Pixi environment (train) ..."
+      ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    else
+      if [[ ! -x "$TRAIN_PYTHON" ]]; then
+        abort "TRAIN_PYTHON not found at $TRAIN_PYTHON (set TRAIN_USE_PIXI=1 or point TRAIN_PYTHON to Pixi env python)."
+      fi
+      echo "[train.sh] Using Pixi env binaries directly from $TRAIN_BIN_DIR"
+      ( cd "$ROOT_DIR" && PATH="$TRAIN_BIN_DIR:$PATH" "$TRAIN_PYTHON" -c "import sys" )
+    fi
     start_server_bg
     wait_for_port
     run_godot_headless "hider"
@@ -278,9 +317,17 @@ case "$MODE" in
     COLLECTED_DEBUG=1
     ;;
   self-play)
-    need_cmd pixi
-    echo "[train.sh] Pre-warming Pixi environment (train) ..."
-    ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    if [[ "$TRAIN_USE_PIXI" != "0" ]]; then
+      need_cmd pixi
+      echo "[train.sh] Pre-warming Pixi environment (train) ..."
+      ( cd "$ROOT_DIR" && pixi run -e train python -c "import sys" )
+    else
+      if [[ ! -x "$TRAIN_PYTHON" ]]; then
+        abort "TRAIN_PYTHON not found at $TRAIN_PYTHON (set TRAIN_USE_PIXI=1 or point TRAIN_PYTHON to Pixi env python)."
+      fi
+      echo "[train.sh] Using Pixi env binaries directly from $TRAIN_BIN_DIR"
+      ( cd "$ROOT_DIR" && PATH="$TRAIN_BIN_DIR:$PATH" "$TRAIN_PYTHON" -c "import sys" )
+    fi
     start_server_bg
     wait_for_port
     run_self_play

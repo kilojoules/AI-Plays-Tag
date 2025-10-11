@@ -98,12 +98,14 @@ Debug Artifacts
 - Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
 - Trainer metrics now record PPO diagnostics alongside per-role rewards, win outcomes, and episode duration. Use `pixi run monitor` (or `pixi run -e train plot --output-dir <dir>`) to regenerate reward/win-rate charts when triaging a run.
 - Self-play runs also capture `self_play_rounds.csv` and per-round `godot_round*.log` files inside the debug directory for postmortem analysis.
+- The curriculum helper snapshots hider opponents to `trainer/policy_pool/hider/` and stores aggregated summaries under `trainer/logs/runs/<approach>/<session>_summary/`.
 
 Shell Script (one command training)
 - Use `scripts/train.sh` to orchestrate server and Godot headless:
 - `bash scripts/train.sh live-seeker`  # shared policy; first agent starts as the seeker
 - `bash scripts/train.sh live-hider`   # shared policy; second agent starts as the seeker
 - `bash scripts/train.sh self-play`    # runs alternating seeker/hider rounds in a single session (self-play pipeline)
+- `bash scripts/self_play_curriculum.sh`  # automates seeker-focused warm starts, weighted self-play, and optional pool evaluations (tune via `CURRICULUM_*` env vars)
 - The script requires Pixi and attempts to launch `godot4` or `godot` headless. If not found, it keeps the server alive and asks you to open Godot manually.
 - Environment overrides for headless tuning (optional):
   - `AI_DISTANCE_REWARD_SCALE`, `AI_SEEKER_TIME_PENALTY`, `AI_WIN_BONUS`, `AI_STEP_TICK_INTERVAL`

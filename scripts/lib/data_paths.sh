@@ -4,11 +4,9 @@
 
 set -euo pipefail
 
-_data_paths_guard="${_DATA_PATHS_SH_LOADED:-0}"
-if [[ "$_data_paths_guard" == "1" ]]; then
+if [[ "${_DATA_PATHS_SH_LOADED:-0}" == "1" ]]; then
   return 0
 fi
-export _DATA_PATHS_SH_LOADED=1
 
 scripts_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${ROOT_DIR:="$(cd "$scripts_dir/.." && pwd)"}"
@@ -49,8 +47,13 @@ if [[ "${AI_MIGRATION_BACKUP_DIR}" != /* ]]; then
 fi
 export AI_MIGRATION_BACKUP_DIR
 
-declare -ga _AI_LEGACY_TRAJECTORY_DIRS=()
-declare -ga _AI_LEGACY_FRAMES_DIRS=()
+if declare -g >/dev/null 2>&1; then
+  declare -ga _AI_LEGACY_TRAJECTORY_DIRS=()
+  declare -ga _AI_LEGACY_FRAMES_DIRS=()
+else
+  declare -a _AI_LEGACY_TRAJECTORY_DIRS=()
+  declare -a _AI_LEGACY_FRAMES_DIRS=()
+fi
 _AI_LEGACY_TRAJECTORY_DIRS+=("$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/trajectories")
 _AI_LEGACY_TRAJECTORY_DIRS+=("$HOME/.local/share/godot/app_userdata/AI Tag Game/trajectories")
 _AI_LEGACY_FRAMES_DIRS+=("$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/frames")
@@ -115,3 +118,5 @@ ai_legacy_trajectory_dirs() {
 ai_legacy_frames_dirs() {
   printf '%s\n' "${_AI_LEGACY_FRAMES_DIRS[@]}"
 }
+
+_DATA_PATHS_SH_LOADED=1

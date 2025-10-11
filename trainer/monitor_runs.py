@@ -258,6 +258,64 @@ def plot_win_rates(run: RunMetrics, charts_dir: str, smoothing_window: int) -> N
     )
 
 
+def plot_win_outcomes(run: RunMetrics, charts_dir: str, smoothing_window: int) -> None:
+    if not run.episodes or not run.winners:
+        return
+    episodes = run.episodes
+    seeker_flags = [1 if w == "seeker" else 0 for w in run.winners]
+    hider_flags = [1 - flag for flag in seeker_flags]
+
+    output_path = os.path.join(charts_dir, "win_outcomes.png")
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ax.plot(
+        episodes,
+        seeker_flags,
+        drawstyle="steps-post",
+        linewidth=0.9,
+        alpha=0.4,
+        label="Seeker win (raw)",
+        color="#1f77b4",
+    )
+    ax.plot(
+        episodes,
+        hider_flags,
+        drawstyle="steps-post",
+        linewidth=0.9,
+        alpha=0.3,
+        label="Hider win (raw)",
+        color="#d62728",
+    )
+
+    if episodes and smoothing_window > 1 and len(seeker_flags) >= smoothing_window:
+        xs_seek, seeker_ma = moving_average(episodes, seeker_flags, smoothing_window)
+        ax.plot(
+            xs_seek,
+            seeker_ma,
+            linewidth=2.0,
+            label=f"Seeker win ({smoothing_window}-episode avg)",
+            color="#0053a0",
+        )
+        xs_hider, hider_ma = moving_average(episodes, hider_flags, smoothing_window)
+        ax.plot(
+            xs_hider,
+            hider_ma,
+            linewidth=2.0,
+            label=f"Hider win ({smoothing_window}-episode avg)",
+            color="#a01f1f",
+        )
+
+    ax.set_title("Per-episode win outcomes")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Win indicator")
+    ax.set_ylim(-0.05, 1.05)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
 def plot_role_rewards(run: RunMetrics, charts_dir: str, smoothing_window: int) -> None:
     if not run.episodes:
         return
@@ -324,6 +382,7 @@ def render_per_run_charts(run: RunMetrics, smoothing_window: int, target_base: O
     )
     plot_role_rewards(run, charts_dir, smoothing_window)
     plot_win_rates(run, charts_dir, smoothing_window)
+    plot_win_outcomes(run, charts_dir, smoothing_window)
     plot_avg_distances(run, charts_dir, smoothing_window)
     plot_episode_duration(run, charts_dir, smoothing_window)
 

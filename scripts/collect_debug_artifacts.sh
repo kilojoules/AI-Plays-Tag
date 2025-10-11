@@ -8,8 +8,15 @@ ai_ensure_data_dirs
 DEFAULT_TRAJECTORY_DIR="$AI_TRAJECTORIES_DIR"
 DEFAULT_FRAMES_DIR="$AI_FRAMES_DIR"
 
-mapfile -t LEGACY_TRAJECTORY_DIRS < <(ai_legacy_trajectory_dirs)
-mapfile -t LEGACY_FRAMES_DIRS < <(ai_legacy_frames_dirs)
+LEGACY_TRAJECTORY_DIRS=()
+while IFS= read -r _legacy_traj; do
+  [[ -n "$_legacy_traj" ]] && LEGACY_TRAJECTORY_DIRS+=("$_legacy_traj")
+done < <(ai_legacy_trajectory_dirs)
+
+LEGACY_FRAMES_DIRS=()
+while IFS= read -r _legacy_frame; do
+  [[ -n "$_legacy_frame" ]] && LEGACY_FRAMES_DIRS+=("$_legacy_frame")
+done < <(ai_legacy_frames_dirs)
 
 usage() {
   cat <<USAGE
