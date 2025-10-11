@@ -15,5 +15,8 @@ Legend:
 - [x] Scripts backlog — see `scripts/TODO.md` (debug bundling + Pixi automation complete).
 - [x] Documentation backlog — see `docs/TODO.md` (reward notes + workflow guides complete).
 
+## CI TODO
+- [x] Restore GitHub workflow so headless Godot tests run under Pixi with required dependencies.
+
 ## Notes
 - Update the checkboxes in the sub TODO files directly; reflect high-level status flips here once merged.

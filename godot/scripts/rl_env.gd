@@ -11,12 +11,14 @@ const DataPaths = preload("res://scripts/data_paths.gd")
 @export var ai_is_it: bool = true  # when true, AI agent starts as 'seeker' each reset; false trains hider
 @export var step_tick_interval: int = 3  # physics ticks per environment step
 # Hide-and-Seek reward parameters
-@export var distance_reward_scale: float = 0.1   # small shaping reward based on distance change
-@export var seeker_time_penalty: float = -0.01   # per-step penalty for seeker
-@export var runner_survival_bonus: float = 0.02  # per-step bonus for runner
-@export var win_bonus: float = 10.0              # bonus on win; negative on loss
-@export var high_ground_bonus: float = 0.1       # per-step bonus for runner when Y > 1.5
-@export var jump_near_bonus: float = 0.5         # bonus for seeker jump near target
+@export var distance_reward_scale: float = 0.14   # shaping reward based on distance change
+@export var seeker_time_penalty: float = -0.005   # per-step penalty for seeker
+@export var runner_survival_bonus: float = 0.01   # per-step bonus for runner
+@export var win_bonus: float = 10.0               # bonus on successful tag events
+@export var high_ground_bonus: float = 0.1        # per-step bonus for runner when Y > 1.5
+@export var jump_near_bonus: float = 0.5          # bonus for seeker jump near target
+@export var timeout_hider_bonus: float = 6.0      # bonus for runner when timer expires
+@export var timeout_seeker_penalty: float = 6.0   # penalty applied to seeker on timeout
 @export var max_steps_per_episode: int = 800     # safety cap (not used for termination)
 @export var log_trajectories: bool = false
 @export var legacy_act_fallback: bool = false    # send single-agent 'act' requests alongside act_batch
@@ -132,11 +134,11 @@ func _physics_process(_delta: float) -> void:
                     if a.global_transform.origin.y > 1.5:
                         rew += high_ground_bonus
                 if time_elapsed >= time_limit_sec:
-                    # timeout: runner wins, seeker loses
+                    # timeout: runner still wins but penalty is softer to ease seeker learning
                     if is_seeker:
-                        rew -= abs(win_bonus)
+                        rew -= abs(timeout_seeker_penalty)
                     else:
-                        rew += abs(win_bonus)
+                        rew += abs(timeout_hider_bonus)
                 if give_tag_bonus:
                     if tag_attacker == a:
                         rew += win_bonus
@@ -348,6 +350,12 @@ func _apply_env_overrides() -> void:
     v = OS.get_environment("AI_WIN_BONUS")
     if v != "":
         win_bonus = float(v)
+    v = OS.get_environment("AI_TIMEOUT_HIDER_BONUS")
+    if v != "":
+        timeout_hider_bonus = float(v)
+    v = OS.get_environment("AI_TIMEOUT_SEEKER_PENALTY")
+    if v != "":
+        timeout_seeker_penalty = float(v)
     v = OS.get_environment("AI_STEP_TICK_INTERVAL")
     if v != "":
         step_tick_interval = int(v)

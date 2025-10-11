@@ -14,5 +14,6 @@
 - [ ] Guard the monitoring pipeline against metrics schema drift by validating required columns (reward, win flags, PPO diagnostics) before charting and surfacing actionable errors. *(trainer/monitor_runs.py, trainer/server.py)*
 - [ ] Land a fixture-backed `pixi run monitor` smoke test that populates `trainer/logs/runs/` with sample runs and asserts on `run_overview.csv` plus chart manifests. *(tests/test_monitoring.py or similar)*
 - [ ] Extend monitoring outputs with PPO health charts (policy/value losses, KL, entropy) and show per-role episode duration distributions so dashboards capture training stability. *(monitor_runs.py + plotting helpers)*
+- [x] Investigate seeker underperformance in self-play and outline curriculum/reward tweaks to rebalance hider dominance.
 - [x] Propose self-play curriculum adjustments to strengthen seeker performance when the hider dominates.
 - [x] Run full training session and produce multi-perspective progress plots for reporting.
