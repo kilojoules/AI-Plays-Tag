@@ -28,6 +28,9 @@ OUTPUT_PATH="$DEFAULT_OUTPUT"
 TITLE="Trained Agents Paths (${RUN_ID})"
 KEEP_SERVER_FLAG="${KEEP_SERVER:-0}"
 USE_PIXI="${EVAL_USE_PIXI:-1}"
+RECORD_FRAMES=0
+RECORD_FPS=60
+FINAL_VIDEO=""
 
 usage() {
   cat <<'EOF'
@@ -38,6 +41,8 @@ Options:
   --start-role <role>      Starting role for Agent1 (seeker|hider, default: seeker).
   --output <path>          Output PNG path (default: charts/eval_paths_<timestamp>.png).
   --title <title>          Plot title override.
+  --record                 Enable frame capture for animation (default: off).
+  --record-fps <fps>       Frame rate when recording (default: 60).
   -h, --help               Show this help message.
 EOF
 }
@@ -75,6 +80,18 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || { echo "Missing value for --title" >&2; exit 1; }
       TITLE="$1"
       ;;
+    --record)
+      RECORD_FRAMES=1
+      ;;
+    --record-fps)
+      shift
+      [[ $# -gt 0 ]] || { echo "Missing value for --record-fps" >&2; exit 1; }
+      if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+        echo "record-fps must be an integer (got '$1')." >&2
+        exit 1
+      fi
+      RECORD_FPS="$1"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -90,7 +107,10 @@ done
 
 mkdir -p "$DEBUG_DIR"
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-mapfile -t LEGACY_TRAJECTORY_DIRS < <(ai_legacy_trajectory_dirs)
+LEGACY_TRAJECTORY_DIRS=()
+while IFS= read -r legacy_dir; do
+  LEGACY_TRAJECTORY_DIRS+=("$legacy_dir")
+done < <(ai_legacy_trajectory_dirs)
 legacy_joined=""
 for legacy_dir in "${LEGACY_TRAJECTORY_DIRS[@]}"; do
   if [[ -z "$legacy_joined" ]]; then
@@ -125,7 +145,7 @@ if [[ ! -f "$ROOT_DIR/trainer/policy_seeker.pt" || ! -f "$ROOT_DIR/trainer/polic
   exit 1
 fi
 
-latest_trajectory_path() {
+latest_trajectory_meta() {
   python3 - <<'PY'
 from pathlib import Path
 import os
@@ -145,10 +165,22 @@ def iter_directories():
 for candidate in iter_directories():
     if not candidate.is_dir():
         continue
-    files = sorted(candidate.glob("*.jsonl"))
+    files = sorted(candidate.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
     if files:
-        print(files[-1])
+        latest = files[-1]
+        stat = latest.stat()
+        print(f"{latest}|{stat.st_mtime}|{stat.st_size}")
         sys.exit(0)
+PY
+}
+
+latest_video_path() {
+  python3 - "$ROOT_DIR" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+candidates = sorted(root.glob("learn_progress-*.mp4"), key=lambda p: p.stat().st_mtime)
+if candidates:
+    print(candidates[-1])
 PY
 }
 
@@ -261,13 +293,17 @@ MSG
   fi
   (
     cd "$ROOT_DIR"
+    if [[ -n "${AI_TIME_LIMIT_SEC:-}" ]]; then
+      export AI_TIME_LIMIT_SEC
+    fi
     env \
       AI_DATA_ROOT="$AI_DATA_ROOT" \
       AI_TRAINING_MODE=1 \
       AI_CONTROL_ALL_AGENTS=1 \
       AI_IS_IT=$ai_is_it \
       AI_LOG_TRAJECTORIES=1 \
-      AI_RECORD=0 \
+      AI_RECORD=$RECORD_FRAMES \
+      AI_RECORD_FPS=$RECORD_FPS \
       AI_TRAIN_DURATION=$DURATION \
       "$godot_bin" --headless --path "$ROOT_DIR/godot"
   ) >"$GODOT_LOG_PATH" 2>&1 &
@@ -281,38 +317,72 @@ MSG
 
 echo "[eval] Debug artifacts directory: $DEBUG_DIR"
 
-LATEST_BEFORE="$(latest_trajectory_path || true)"
+if [[ "$RECORD_FRAMES" -eq 1 && "${AI_PRESERVE_FRAMES:-0}" != "1" ]]; then
+  if [[ -d "$AI_FRAMES_DIR" ]] && compgen -G "$AI_FRAMES_DIR/frame_*.png" >/dev/null; then
+    echo "[eval] Clearing stale frames from $AI_FRAMES_DIR"
+    rm -f "$AI_FRAMES_DIR"/frame_*.png
+  fi
+fi
+
+LATEST_BEFORE_INFO="$(latest_trajectory_meta || true)"
+LATEST_BEFORE_PATH=""
+LATEST_BEFORE_MTIME=""
+LATEST_BEFORE_SIZE=""
+if [[ -n "$LATEST_BEFORE_INFO" ]]; then
+  IFS='|' read -r LATEST_BEFORE_PATH LATEST_BEFORE_MTIME LATEST_BEFORE_SIZE <<<"$LATEST_BEFORE_INFO"
+fi
 start_server
 wait_for_port
 run_godot
 sleep 1
-LATEST_AFTER="$(latest_trajectory_path || true)"
+LATEST_AFTER_INFO="$(latest_trajectory_meta || true)"
+LATEST_AFTER_PATH=""
+LATEST_AFTER_MTIME=""
+LATEST_AFTER_SIZE=""
+if [[ -n "$LATEST_AFTER_INFO" ]]; then
+  IFS='|' read -r LATEST_AFTER_PATH LATEST_AFTER_MTIME LATEST_AFTER_SIZE <<<"$LATEST_AFTER_INFO"
+fi
 
-if [[ -z "$LATEST_AFTER" ]]; then
+if [[ -z "$LATEST_AFTER_PATH" ]]; then
   echo "[eval] No trajectory file detected after run. Check Godot logs at $GODOT_LOG_PATH." >&2
   exit 1
 fi
 
-if [[ -n "$LATEST_BEFORE" && "$LATEST_AFTER" == "$LATEST_BEFORE" ]]; then
+if [[ -n "$LATEST_BEFORE_PATH" && "$LATEST_AFTER_PATH" == "$LATEST_BEFORE_PATH" && "$LATEST_AFTER_MTIME" == "$LATEST_BEFORE_MTIME" && "$LATEST_AFTER_SIZE" == "$LATEST_BEFORE_SIZE" ]]; then
   echo "[eval] No new trajectory produced (latest did not change)." >&2
   exit 1
 fi
 
-echo "[eval] Latest trajectory: $LATEST_AFTER"
+echo "[eval] Latest trajectory: $LATEST_AFTER_PATH"
 
-if [[ -f "$LATEST_AFTER" ]]; then
-  cp "$LATEST_AFTER" "$DEBUG_DIR/trajectory.jsonl"
+if [[ -f "$LATEST_AFTER_PATH" ]]; then
+  cp "$LATEST_AFTER_PATH" "$DEBUG_DIR/trajectory.jsonl"
+fi
+
+if [[ "$RECORD_FRAMES" -eq 1 ]]; then
+  if compgen -G "$AI_FRAMES_DIR/frame_*.png" >/dev/null; then
+    echo "[eval] Encoding recorded frames into MP4"
+    prev_mp4="$(latest_video_path || true)"
+    AI_PRESERVE_FRAMES=0 bash "$ROOT_DIR/scripts/encode_frames.sh"
+    new_mp4="$(latest_video_path || true)"
+    if [[ -n "$new_mp4" && "$new_mp4" != "$prev_mp4" ]]; then
+      cp "$new_mp4" "$DEBUG_DIR/$(basename "$new_mp4")"
+      FINAL_VIDEO="$new_mp4"
+    fi
+  else
+    echo "[eval] No frames captured; skipping encoding." >&2
+  fi
 fi
 
 echo "[eval] Rendering path plot to $OUTPUT_PATH"
 if [[ "$USE_PIXI" == "1" ]]; then
   pixi run -e train -- python scripts/plot_paths_from_trajectory.py \
-    --trajectory "$LATEST_AFTER" \
+    --trajectory "$LATEST_AFTER_PATH" \
     --output "$OUTPUT_PATH" \
     --title "$TITLE"
 else
   python3 "$ROOT_DIR/scripts/plot_paths_from_trajectory.py" \
-    --trajectory "$LATEST_AFTER" \
+    --trajectory "$LATEST_AFTER_PATH" \
     --output "$OUTPUT_PATH" \
     --title "$TITLE"
 fi
@@ -322,6 +392,9 @@ if [[ -f "$OUTPUT_PATH" ]]; then
 fi
 
 echo "[eval] Plot created at $OUTPUT_PATH"
+if [[ -n "$FINAL_VIDEO" ]]; then
+  echo "[eval] Video saved: $FINAL_VIDEO"
+fi
 echo "[eval] Godot log:   $GODOT_LOG_PATH"
 echo "[eval] Server log:  $SERVER_LOG_PATH"
 

@@ -22,6 +22,7 @@ var episode_active: bool = false
 
 func _ready() -> void:
     add_to_group("game_manager")
+    _apply_env_overrides()
     agents = get_tree().get_nodes_in_group("agents")
     if agents.size() == 0:
         push_warning("No agents found in scene.")
@@ -87,6 +88,11 @@ func _switch_camera_target() -> void:
     var target: Node = agents[camera_index]
     if camera_rig and camera_rig.has_method("set_target"):
         camera_rig.call("set_target", target)
+
+func _apply_env_overrides() -> void:
+    var v := OS.get_environment("AI_TIME_LIMIT_SEC")
+    if v != "":
+        time_limit_sec = float(v)
 
 func reset_round(seeker: Node) -> void:
     # Randomize positions and reset states; assign roles for this episode.

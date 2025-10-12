@@ -90,7 +90,7 @@ def load_paths(path: Path) -> Dict[str, Dict[str, Any]]:
     return paths
 
 
-def plot_paths(paths: Dict[str, Dict[str, Any]], output: Path, title: str) -> None:
+def plot_paths(paths: Dict[str, Dict[str, Any]], output: Path, title: str, dpi: int) -> None:
     import matplotlib.pyplot as plt  # Lazy import to keep tests lightweight
     plt.style.use("seaborn-v0_8")
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -131,7 +131,7 @@ def plot_paths(paths: Dict[str, Dict[str, Any]], output: Path, title: str) -> No
     ax.set_title(title)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    fig.savefig(output, dpi=200)
+    fig.savefig(output, dpi=dpi)
     plt.close(fig)
 
 
@@ -140,6 +140,7 @@ def main() -> None:
     parser.add_argument("--trajectory", type=Path, help="Path to trajectory JSONL (defaults to latest).", default=None)
     parser.add_argument("--output", type=Path, help="PNG output path", default=Path("charts/trajectory_paths.png"))
     parser.add_argument("--title", type=str, default="Agent Paths")
+    parser.add_argument("--dpi", type=int, default=150, help="Output image DPI (default: 150).")
     parser.add_argument("--print-latest", action="store_true", help="Print the latest trajectory path and exit.")
     args = parser.parse_args()
 
@@ -155,7 +156,8 @@ def main() -> None:
     paths = load_paths(traj)
     if not paths:
         raise SystemExit(f"No path data extracted from {traj}")
-    plot_paths(paths, args.output, args.title)
+    dpi = max(50, args.dpi)
+    plot_paths(paths, args.output, args.title, dpi)
     print(f"Saved path plot to {args.output}")
 
 

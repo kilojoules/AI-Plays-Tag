@@ -47,3 +47,11 @@ else
   ffmpeg -y -r 60 -i "$FRAMES_DIR/frame_%05d.png" -c:v libx264 -pix_fmt yuv420p "$OUT"
 fi
 echo "Saved: $OUT"
+if [[ "${AI_PRESERVE_FRAMES:-0}" != "1" ]]; then
+  if compgen -G "$FRAMES_DIR/frame_*.png" >/dev/null; then
+    echo "[encode] Cleaning up raw frames in $FRAMES_DIR"
+    rm -f "$FRAMES_DIR"/frame_*.png
+  fi
+else
+  echo "[encode] Preserving raw frames (AI_PRESERVE_FRAMES=$AI_PRESERVE_FRAMES)"
+fi

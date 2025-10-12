@@ -32,12 +32,22 @@ SERVER_LOG=""
 GODOT_LOG=""
 TRAJECTORY_PATH=""
 FRAMES_DIR=""
+INCLUDE_FRAMES=0
+FRAMES_LIMIT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       usage
       exit 0
+      ;;
+    --include-frames)
+      INCLUDE_FRAMES=1
+      shift
+      ;;
+    --frames-limit)
+      FRAMES_LIMIT="${2:-}"
+      shift 2
       ;;
     --server-log)
       SERVER_LOG="${2:-}"
@@ -53,6 +63,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --frames-dir)
       FRAMES_DIR="${2:-}"
+      INCLUDE_FRAMES=1
       shift 2
       ;;
     *)
@@ -74,6 +85,11 @@ fi
 
 mkdir -p "$DEST"
 
+if [[ -n "$FRAMES_LIMIT" && ! "$FRAMES_LIMIT" =~ ^[0-9]+$ ]]; then
+  echo "frames-limit must be a non-negative integer (got '$FRAMES_LIMIT')" >&2
+  exit 1
+fi
+
 copy_if_exists() {
   local src="$1"
   local name="${2:-}"
@@ -81,8 +97,40 @@ copy_if_exists() {
     name="$(basename "$src")"
   fi
   if [[ -f "$src" ]]; then
-    cp "$src" "$DEST/$name"
+    local dest_path="$DEST/$name"
+    # Skip self-copy to avoid cp errors when DEST already hosts the source file.
+    if [[ -f "$dest_path" && -e "$src" ]] && [[ "$src" -ef "$dest_path" ]]; then
+      return
+    fi
+    cp "$src" "$dest_path"
     echo "[collect] copied $(basename "$src")"
+  fi
+}
+
+copy_frame_subset() {
+  local src="$1"
+  local name="$2"
+  local limit="$3"
+  local dest_dir="$DEST/$name"
+  if [[ ! -d "$src" ]]; then
+    echo "[collect] No frames directory at $src" >&2
+    return
+  fi
+  if ! compgen -G "$src/frame_*.png" > /dev/null; then
+    echo "[collect] No frame_*.png files found in $src" >&2
+    return
+  fi
+  mkdir -p "$dest_dir"
+  local copied=0
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    cp "$src/$rel" "$dest_dir/"
+    ((copied++))
+  done < <(cd "$src" && ls -t frame_*.png 2>/dev/null | head -n "$limit")
+  if (( copied > 0 )); then
+    echo "[collect] copied ${copied} frame(s) into $name (latest first, limit=$limit)"
+  else
+    echo "[collect] No frames selected for copy (limit=$limit)" >&2
   fi
 }
 
@@ -93,6 +141,10 @@ copy_dir_if_exists() {
     name="$(basename "$src")"
   fi
   if [[ -d "$src" ]]; then
+    local dest_dir="$DEST/$name"
+    if [[ -d "$dest_dir" ]] && [[ "$src" -ef "$dest_dir" ]]; then
+      return
+    fi
     mkdir -p "$DEST/$name"
     cp -R "$src"/. "$DEST/$name/"
     echo "[collect] copied directory $(basename "$src")"
@@ -162,27 +214,32 @@ else
 fi
 
 # Frame dumps
-if [[ -n "$FRAMES_DIR" ]]; then
-  copy_dir_if_exists "$FRAMES_DIR" "frames"
-else
-  copied=0
-  if [[ -d "$DEFAULT_FRAMES_DIR" ]]; then
-    copy_dir_if_exists "$DEFAULT_FRAMES_DIR" "frames"
-    copied=1
-  fi
-  if [[ "$copied" -eq 0 ]]; then
+if [[ "$INCLUDE_FRAMES" -eq 1 ]]; then
+  selected_dir=""
+  if [[ -n "$FRAMES_DIR" ]]; then
+    selected_dir="$FRAMES_DIR"
+  elif [[ -d "$DEFAULT_FRAMES_DIR" ]]; then
+    selected_dir="$DEFAULT_FRAMES_DIR"
+  else
     for legacy_dir in "${LEGACY_FRAMES_DIRS[@]}"; do
       if [[ -d "$legacy_dir" ]]; then
-        copy_dir_if_exists "$legacy_dir" "frames"
-        echo "[collect] (legacy) copied frames from $legacy_dir"
-        copied=1
+        selected_dir="$legacy_dir"
+        echo "[collect] (legacy) selecting frames from $legacy_dir"
         break
       fi
     done
   fi
-  if [[ "$copied" -eq 0 ]]; then
-    echo "[collect] No frames directory found. Checked workspace + legacy locations." >&2
+  if [[ -n "$selected_dir" ]]; then
+    if [[ -n "$FRAMES_LIMIT" && "$FRAMES_LIMIT" -gt 0 ]]; then
+      copy_frame_subset "$selected_dir" "frames" "$FRAMES_LIMIT"
+    else
+      copy_dir_if_exists "$selected_dir" "frames"
+    fi
+  else
+    echo "[collect] No frames directory found. Skipping frames copy." >&2
   fi
+else
+  echo "[collect] frames not copied (pass --include-frames to bundle them)"
 fi
 
 # Metadata (git, environment)

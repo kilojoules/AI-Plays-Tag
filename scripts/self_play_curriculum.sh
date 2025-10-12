@@ -164,7 +164,10 @@ prune_pool() {
   if [[ "$keep" -le 0 ]]; then
     return
   fi
-  mapfile -t snapshots < <(ls -1t "$CURRICULUM_POOL_DIR"/policy_hider_*.pt 2>/dev/null || true)
+  local snapshots=()
+  while IFS= read -r snapshot_path; do
+    [[ -n "$snapshot_path" ]] && snapshots+=("$snapshot_path")
+  done < <(ls -1t "$CURRICULUM_POOL_DIR"/policy_hider_*.pt 2>/dev/null || true)
   if (( ${#snapshots[@]} <= keep )); then
     return
   fi
@@ -214,7 +217,10 @@ evaluate_against_pool() {
     log "warning: hider policy missing; skipping pool evaluation."
     return 0
   fi
-  mapfile -t opponents < <(ls -1t "$CURRICULUM_POOL_DIR"/policy_hider_*.pt 2>/dev/null || true)
+  local opponents=()
+  while IFS= read -r opponent_path; do
+    [[ -n "$opponent_path" ]] && opponents+=("$opponent_path")
+  done < <(ls -1t "$CURRICULUM_POOL_DIR"/policy_hider_*.pt 2>/dev/null || true)
   if (( ${#opponents[@]} == 0 )); then
     log "No opponents in pool yet; skipping evaluation."
     return 0

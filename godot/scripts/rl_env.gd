@@ -359,6 +359,9 @@ func _apply_env_overrides() -> void:
     v = OS.get_environment("AI_STEP_TICK_INTERVAL")
     if v != "":
         step_tick_interval = int(v)
+    v = OS.get_environment("AI_TIME_LIMIT_SEC")
+    if v != "":
+        time_limit_sec = float(v)
     v = OS.get_environment("AI_MAX_STEPS_PER_EPISODE")
     if v != "":
         max_steps_per_episode = int(v)

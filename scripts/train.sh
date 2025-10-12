@@ -26,6 +26,13 @@ SERVER_LOG_PATH="$DEBUG_DIR/server.log"
 GODOT_LOG_PATH="$DEBUG_DIR/godot.log"
 COLLECTED_DEBUG=0
 
+if [[ "${TRAIN_CLEAN_FRAMES:-1}" == "1" && "${AI_PRESERVE_FRAMES:-0}" != "1" ]]; then
+  if [[ -d "$AI_FRAMES_DIR" ]] && compgen -G "$AI_FRAMES_DIR/frame_*.png" >/dev/null; then
+    echo "[train.sh] Clearing stale frames from $AI_FRAMES_DIR"
+    rm -f "$AI_FRAMES_DIR"/frame_*.png
+  fi
+fi
+
 mkdir -p "$DEBUG_DIR"
 echo "[train.sh] Debug artifacts directory: $DEBUG_DIR"
 echo "$DEBUG_DIR" > "$ROOT_DIR/.server.debugdir"
@@ -121,6 +128,9 @@ MSG
   echo "[train.sh] Streaming Godot output to $log_path"
   (
     cd "$ROOT_DIR"
+    if [[ -n "${AI_TIME_LIMIT_SEC:-}" ]]; then
+      export AI_TIME_LIMIT_SEC
+    fi
     env \
       AI_DATA_ROOT="$AI_DATA_ROOT" \
       AI_TRAINING_MODE=1 \
@@ -128,7 +138,8 @@ MSG
       AI_CONTROL_ALL_AGENTS=1 \
       AI_MAX_STEPS_PER_EPISODE=${AI_MAX_STEPS_PER_EPISODE:-300} \
       AI_STEP_TICK_INTERVAL=${AI_STEP_TICK_INTERVAL:-1} \
-      AI_RECORD=${AI_RECORD:-0} \
+      AI_RECORD=0 \
+      AI_RECORD_FPS=0 \
       AI_LOG_TRAJECTORIES=${AI_LOG_TRAJECTORIES:-0} \
       "$godot_bin" --headless --path "$ROOT_DIR/godot"
   ) >"$log_path" 2>&1 &
@@ -257,6 +268,14 @@ make_video_from_frames() {
   echo "[train.sh] Video saved: $out"
   if [[ -f "$out" ]]; then
     cp "$out" "$DEBUG_DIR/$(basename "$out")"
+  fi
+  if [[ "${AI_PRESERVE_FRAMES:-0}" != "1" ]]; then
+    if compgen -G "$frames_dir/frame_*.png" >/dev/null; then
+      echo "[train.sh] Cleaning up raw frames in $frames_dir"
+      rm -f "$frames_dir"/frame_*.png
+    fi
+  else
+    echo "[train.sh] Preserving raw frames (AI_PRESERVE_FRAMES=$AI_PRESERVE_FRAMES)"
   fi
 }
 

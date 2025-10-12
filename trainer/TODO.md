@@ -17,3 +17,4 @@
 - [x] Investigate seeker underperformance in self-play and outline curriculum/reward tweaks to rebalance hider dominance.
 - [x] Propose self-play curriculum adjustments to strengthen seeker performance when the hider dominates.
 - [x] Run full training session and produce multi-perspective progress plots for reporting.
+- [I] Run extended training with 30s episodes to produce a high-quality seeker plus final animation and 2D path map.
