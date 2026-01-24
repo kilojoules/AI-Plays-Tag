@@ -1,0 +1,15 @@
+{
+  "run_id": "20260124_171049",
+  "total_episodes": 4473,
+  "seeker_wins": 3555,
+  "hider_wins": 918,
+  "seeker_win_rate": 0.7947686116700201,
+  "config": {
+    "num_envs": 64,
+    "total_timesteps": 500000,
+    "batch_size": 2048,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "lr": 0.0003
+  }
+}
