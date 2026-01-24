@@ -6,7 +6,7 @@ Generates:
 1. Agent trajectory plots showing movement patterns
 2. Win rate statistics and charts
 3. Episode replay data for Godot visualization
-4. Optional animated GIFs of gameplay
+4. Optional animated MP4s of gameplay
 """
 from __future__ import annotations
 
@@ -294,7 +294,7 @@ class OutcomeVisualizer:
         plt.close(fig)
 
     def create_animation(self, trajectory: Dict[str, Any], filename: str, fps: int = 30):
-        """Create an animated GIF of a single episode."""
+        """Create an animated MP4 of a single episode."""
         fig, ax = plt.subplots(figsize=(8, 8))
 
         arena_half = 15.0
@@ -341,7 +341,7 @@ class OutcomeVisualizer:
         ani = animation.FuncAnimation(fig, animate, init_func=init,
                                        frames=n_frames, interval=1000/fps, blit=True)
 
-        ani.save(filename, writer='pillow', fps=fps)
+        ani.save(filename, writer='ffmpeg', fps=fps)
         plt.close(fig)
         print(f"Animation saved: {filename}")
 
@@ -428,7 +428,7 @@ class OutcomeVisualizer:
             print(f"Quickest tag episode saved")
 
             if create_anim:
-                self.create_animation(quickest, os.path.join(run_dir, "quickest_tag.gif"))
+                self.create_animation(quickest, os.path.join(run_dir, "quickest_tag.mp4"))
 
         if escaped_trajs:
             longest_escape = max(escaped_trajs, key=lambda t: t['duration'])
@@ -437,7 +437,7 @@ class OutcomeVisualizer:
             print(f"Best escape episode saved")
 
             if create_anim:
-                self.create_animation(longest_escape, os.path.join(run_dir, "best_escape.gif"))
+                self.create_animation(longest_escape, os.path.join(run_dir, "best_escape.mp4"))
 
         # Export a typical episode
         if trajectories:
@@ -449,7 +449,7 @@ class OutcomeVisualizer:
             print(f"Typical episode saved")
 
             if create_anim:
-                self.create_animation(typical, os.path.join(run_dir, "typical_episode.gif"))
+                self.create_animation(typical, os.path.join(run_dir, "typical_episode.mp4"))
 
         print(f"\nAll visualizations saved to: {run_dir}")
         return run_dir
@@ -466,7 +466,7 @@ def main():
     parser.add_argument("--output-dir", type=str, default="trainer/visualizations",
                         help="Output directory")
     parser.add_argument("--animate", action="store_true",
-                        help="Create animated GIFs (slower)")
+                        help="Create animated MP4 videos (requires ffmpeg)")
 
     args = parser.parse_args()
 
