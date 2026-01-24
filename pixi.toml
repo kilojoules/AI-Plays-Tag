@@ -30,3 +30,15 @@ eval-episode = "bash scripts/eval_episode.sh"
 migrate-user-data = "bash scripts/migrate_user_data.sh"
 monitor = "python trainer/monitor_runs.py"
 monitor-all = "python trainer/monitor_runs.py --all-runs"
+
+# Fast training (Python-only, no Godot required)
+train = "python trainer/train_fast.py"
+train-quick = "python trainer/train_fast.py --timesteps 100000"
+train-full = "python trainer/train_fast.py --timesteps 1000000"
+
+# Visualization
+visualize = "python trainer/visualize_outcome.py"
+visualize-anim = "python trainer/visualize_outcome.py --animate"
+
+# Demo in Godot (requires Godot)
+demo = "bash scripts/demo_trained.sh"

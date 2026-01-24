@@ -7,10 +7,33 @@ Overview
 
 Structure
 - `godot/`: Godot 4 project with scenes and scripts.
-- `trainer/`: Python bridge and RL training scaffolding.
+- `trainer/`: Python bridge, RL training, and fast vectorized environment.
 - `data/`: Workspace-local runtime artifacts (trajectories, frame dumps, imported legacy data). Override with `AI_DATA_ROOT` if embedding the project elsewhere.
 
-Quick Start (Phase 1: Manual Control)
+Quick Start: Fast Training (Recommended)
+The fastest way to train tag agents uses a pure-Python vectorized environment that runs ~100x faster than the Godot-based training.
+
+1. Train agents (takes ~1 minute for 500K steps):
+   - `pixi run train`              # Default: 500K timesteps, 64 parallel envs
+   - `pixi run train-quick`        # Quick test: 100K timesteps
+   - `pixi run train-full`         # Full training: 1M timesteps
+
+2. Visualize outcomes (generates trajectory plots and statistics):
+   - `pixi run visualize`          # Run 50 eval episodes, generate charts
+   - `pixi run visualize-anim`     # Also create animated GIFs (slower)
+
+3. Demo in Godot (3D visualization of trained agents):
+   - `pixi run demo`               # Watch trained agents in Godot
+   - `bash scripts/demo_trained.sh 10 --record`  # Record 10 episodes to video
+
+Output locations:
+- Trained policies: `trainer/policy_seeker.pt`, `trainer/policy_hider.pt`
+- Training logs: `trainer/logs/fast_train/<run_id>/`
+- Visualizations: `trainer/visualizations/<timestamp>/`
+
+The fast training uses self-play where both seeker and hider learn simultaneously.
+
+Quick Start (Manual Control)
 - Open `godot/` in Godot 4.x.
 - Run the main scene `scenes/Main.tscn`.
 - Controls: WASD to move, Space to jump. Tab switches camera target.
@@ -19,12 +42,21 @@ Tag Rules
 - One agent starts as "it". If the "it" agent’s tag area touches another agent that is not immune, the "it" status is transferred.
 - Newly tagged agents gain short immunity to prevent immediate tag-back.
 
-Phase 2 Bridge (Preview)
-- Godot side can be wired to a WebSocket client (`scripts/rl_client.gd`).
-- Python side launches a WebSocket server (`trainer/server.py`) that serves `act`/`act_batch` requests and consumes `transition_batch` payloads streamed from Godot.
-- PPO/training scaffolding included (`trainer/ppo.py`) as a starting point.
+Training Options
 
-End-to-End Training with Godot (Live)
+1. Fast Training (Recommended)
+   Uses a pure-Python vectorized environment (`trainer/tag_env.py`) that simulates the tag game without Godot. This is ~100x faster and recommended for policy learning.
+   - `pixi run train` to start training
+   - Policies saved to `trainer/policy_seeker.pt` and `trainer/policy_hider.pt`
+   - See "Quick Start: Fast Training" above for details
+
+2. Godot Live Training (Alternative)
+   Uses the full Godot engine with WebSocket communication. Slower but provides accurate 3D physics.
+   - Godot connects via WebSocket client (`scripts/rl_client.gd`)
+   - Python server (`trainer/server.py`) serves actions and collects transitions
+   - Useful for fine-tuning after fast training
+
+Godot Live Training Setup
 - The server can learn from Godot by collecting transitions and updating a policy online (simple PPO-style update).
 - In Godot, select the `RLEnv` node and set:
   - `training_mode = true`
