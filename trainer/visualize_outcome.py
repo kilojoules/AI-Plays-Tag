@@ -295,53 +295,68 @@ class OutcomeVisualizer:
 
     def create_animation(self, trajectory: Dict[str, Any], filename: str, fps: int = 30):
         """Create an animated MP4 of a single episode."""
-        fig, ax = plt.subplots(figsize=(8, 8))
-
-        arena_half = 15.0
-
-        def init():
-            ax.clear()
-            arena = Rectangle((-arena_half, -arena_half), arena_half * 2, arena_half * 2,
-                             fill=False, edgecolor='black', linewidth=2)
-            ax.add_patch(arena)
-            ax.set_xlim(-arena_half - 2, arena_half + 2)
-            ax.set_ylim(-arena_half - 2, arena_half + 2)
-            ax.set_aspect('equal')
-            ax.grid(True, alpha=0.3)
-            return []
-
         seeker_pos = np.array(trajectory['seeker_positions'])
         hider_pos = np.array(trajectory['hider_positions'])
         n_frames = len(seeker_pos)
 
-        seeker_circle = plt.Circle((0, 0), 0.5, color='red', zorder=5)
-        hider_circle = plt.Circle((0, 0), 0.5, color='blue', zorder=5)
-        seeker_trail, = ax.plot([], [], 'r-', alpha=0.3, linewidth=1)
-        hider_trail, = ax.plot([], [], 'b-', alpha=0.3, linewidth=1)
-        time_text = ax.text(0, arena_half + 1, '', ha='center', fontsize=12)
+        # Debug: print trajectory info
+        print(f"  Creating animation with {n_frames} frames")
+        print(f"  Seeker start: ({seeker_pos[0][0]:.1f}, {seeker_pos[0][1]:.1f})")
+        print(f"  Hider start: ({hider_pos[0][0]:.1f}, {hider_pos[0][1]:.1f})")
+        print(f"  Seeker end: ({seeker_pos[-1][0]:.1f}, {seeker_pos[-1][1]:.1f})")
+        print(f"  Hider end: ({hider_pos[-1][0]:.1f}, {hider_pos[-1][1]:.1f})")
 
-        ax.add_patch(seeker_circle)
-        ax.add_patch(hider_circle)
+        arena_half = 15.0
+        fig, ax = plt.subplots(figsize=(10, 10))
 
         def animate(frame):
-            # Update positions
-            seeker_circle.center = seeker_pos[frame]
-            hider_circle.center = hider_pos[frame]
+            ax.clear()
 
-            # Update trails
-            seeker_trail.set_data(seeker_pos[:frame+1, 0], seeker_pos[:frame+1, 1])
-            hider_trail.set_data(hider_pos[:frame+1, 0], hider_pos[:frame+1, 1])
+            # Draw arena
+            arena = Rectangle((-arena_half, -arena_half), arena_half * 2, arena_half * 2,
+                             fill=False, edgecolor='black', linewidth=2)
+            ax.add_patch(arena)
 
-            # Update time
+            # Draw trails (path history)
+            if frame > 0:
+                ax.plot(seeker_pos[:frame+1, 0], seeker_pos[:frame+1, 1],
+                       'r-', alpha=0.4, linewidth=2, label='Seeker path')
+                ax.plot(hider_pos[:frame+1, 0], hider_pos[:frame+1, 1],
+                       'b-', alpha=0.4, linewidth=2, label='Hider path')
+
+            # Draw agents as circles
+            seeker = plt.Circle(seeker_pos[frame], 0.8, color='red', zorder=5, label='Seeker')
+            hider = plt.Circle(hider_pos[frame], 0.8, color='blue', zorder=5, label='Hider')
+            ax.add_patch(seeker)
+            ax.add_patch(hider)
+
+            # Add agent labels
+            ax.annotate('S', seeker_pos[frame], ha='center', va='center',
+                       fontsize=12, fontweight='bold', color='white', zorder=6)
+            ax.annotate('H', hider_pos[frame], ha='center', va='center',
+                       fontsize=12, fontweight='bold', color='white', zorder=6)
+
+            # Time and frame info
             t = trajectory['timestamps'][frame]
-            time_text.set_text(f'Time: {t:.2f}s')
+            outcome = "TAGGED!" if trajectory['tagged'] else "ESCAPED!"
+            status = outcome if frame == n_frames - 1 else f"Time: {t:.2f}s"
+            ax.set_title(f'Tag Game - {status}', fontsize=14, fontweight='bold')
 
-            return [seeker_circle, hider_circle, seeker_trail, hider_trail, time_text]
+            # Set axis properties
+            ax.set_xlim(-arena_half - 2, arena_half + 2)
+            ax.set_ylim(-arena_half - 2, arena_half + 2)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.3)
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
 
-        ani = animation.FuncAnimation(fig, animate, init_func=init,
-                                       frames=n_frames, interval=1000/fps, blit=True)
+            # Legend
+            ax.legend(loc='upper right')
 
-        ani.save(filename, writer='ffmpeg', fps=fps)
+        ani = animation.FuncAnimation(fig, animate, frames=n_frames,
+                                       interval=1000/fps, repeat=False)
+
+        ani.save(filename, writer='ffmpeg', fps=fps, dpi=100)
         plt.close(fig)
         print(f"Animation saved: {filename}")
 

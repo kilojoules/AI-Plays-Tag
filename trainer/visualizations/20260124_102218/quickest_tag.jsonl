@@ -1,0 +1,41 @@
+{"type": "episode_start", "ts": 0}
+{"type": "step", "agent": "Seeker", "pos": [-13.0, 0.0, 3.86486554145813], "is_it": true, "ts": 0}
+{"type": "step", "agent": "Hider", "pos": [-11.17137622833252, 0.0, 9.376126289367676], "is_it": false, "ts": 0}
+{"type": "step", "agent": "Seeker", "pos": [-13.006490707397461, 0.0, 4.024418830871582], "is_it": true, "ts": 50}
+{"type": "step", "agent": "Hider", "pos": [-11.298663139343262, 0.0, 9.52405834197998], "is_it": false, "ts": 50}
+{"type": "step", "agent": "Seeker", "pos": [-13.072378158569336, 0.0, 4.269728660583496], "is_it": true, "ts": 100}
+{"type": "step", "agent": "Hider", "pos": [-11.479429244995117, 0.0, 9.645158767700195], "is_it": false, "ts": 100}
+{"type": "step", "agent": "Seeker", "pos": [-13.067873001098633, 0.0, 4.5623369216918945], "is_it": true, "ts": 150}
+{"type": "step", "agent": "Hider", "pos": [-11.74206829071045, 0.0, 9.70543098449707], "is_it": false, "ts": 150}
+{"type": "step", "agent": "Seeker", "pos": [-13.115645408630371, 0.0, 4.875081539154053], "is_it": true, "ts": 200}
+{"type": "step", "agent": "Hider", "pos": [-12.012784004211426, 0.0, 9.76821517944336], "is_it": false, "ts": 200}
+{"type": "step", "agent": "Seeker", "pos": [-13.191673278808594, 0.0, 5.1104559898376465], "is_it": true, "ts": 250}
+{"type": "step", "agent": "Hider", "pos": [-12.306407928466797, 0.0, 9.844852447509766], "is_it": false, "ts": 250}
+{"type": "step", "agent": "Seeker", "pos": [-13.216773986816406, 0.0, 5.353989124298096], "is_it": true, "ts": 300}
+{"type": "step", "agent": "Hider", "pos": [-12.63754653930664, 0.0, 9.815678596496582], "is_it": false, "ts": 300}
+{"type": "step", "agent": "Seeker", "pos": [-13.273541450500488, 0.0, 5.597686767578125], "is_it": true, "ts": 350}
+{"type": "step", "agent": "Hider", "pos": [-12.994138717651367, 0.0, 9.697685241699219], "is_it": false, "ts": 350}
+{"type": "step", "agent": "Seeker", "pos": [-13.385650634765625, 0.0, 5.791783332824707], "is_it": true, "ts": 400}
+{"type": "step", "agent": "Hider", "pos": [-13.308640480041504, 0.0, 9.695826530456543], "is_it": false, "ts": 400}
+{"type": "step", "agent": "Seeker", "pos": [-13.43726634979248, 0.0, 6.027523040771484], "is_it": true, "ts": 450}
+{"type": "step", "agent": "Hider", "pos": [-13.643256187438965, 0.0, 9.539701461791992], "is_it": false, "ts": 450}
+{"type": "step", "agent": "Seeker", "pos": [-13.507329940795898, 0.0, 6.284252166748047], "is_it": true, "ts": 500}
+{"type": "step", "agent": "Hider", "pos": [-13.953667640686035, 0.0, 9.28770923614502], "is_it": false, "ts": 500}
+{"type": "step", "agent": "Seeker", "pos": [-13.600194931030273, 0.0, 6.499370574951172], "is_it": true, "ts": 550}
+{"type": "step", "agent": "Hider", "pos": [-13.88317584991455, 0.0, 8.960698127746582], "is_it": false, "ts": 550}
+{"type": "step", "agent": "Seeker", "pos": [-13.67777156829834, 0.0, 6.611690044403076], "is_it": true, "ts": 600}
+{"type": "step", "agent": "Hider", "pos": [-13.923199653625488, 0.0, 8.63608455657959], "is_it": false, "ts": 600}
+{"type": "step", "agent": "Seeker", "pos": [-13.628576278686523, 0.0, 6.654688835144043], "is_it": true, "ts": 650}
+{"type": "step", "agent": "Hider", "pos": [-14.18972396850586, 0.0, 8.694704055786133], "is_it": false, "ts": 650}
+{"type": "step", "agent": "Seeker", "pos": [-13.603137016296387, 0.0, 6.782539367675781], "is_it": true, "ts": 699}
+{"type": "step", "agent": "Hider", "pos": [-14.394818305969238, 0.0, 8.815516471862793], "is_it": false, "ts": 699}
+{"type": "step", "agent": "Seeker", "pos": [-13.5905179977417, 0.0, 6.997900009155273], "is_it": true, "ts": 749}
+{"type": "step", "agent": "Hider", "pos": [-14.5, 0.0, 8.872217178344727], "is_it": false, "ts": 749}
+{"type": "step", "agent": "Seeker", "pos": [-13.579354286193848, 0.0, 7.2649641036987305], "is_it": true, "ts": 799}
+{"type": "step", "agent": "Hider", "pos": [-14.5, 0.0, 8.888106346130371], "is_it": false, "ts": 799}
+{"type": "step", "agent": "Seeker", "pos": [-13.557628631591797, 0.0, 7.565993785858154], "is_it": true, "ts": 849}
+{"type": "step", "agent": "Hider", "pos": [-14.5, 0.0, 8.829092025756836], "is_it": false, "ts": 849}
+{"type": "step", "agent": "Seeker", "pos": [-13.610146522521973, 0.0, 7.888649940490723], "is_it": true, "ts": 899}
+{"type": "step", "agent": "Hider", "pos": [-14.5, 0.0, 8.717723846435547], "is_it": false, "ts": 899}
+{"type": "tag", "attacker": "Seeker", "target": "Hider", "ts": 899}
+{"type": "episode_end", "ts": 899}

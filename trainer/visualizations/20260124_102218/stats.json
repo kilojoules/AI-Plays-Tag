@@ -1,0 +1,11 @@
+{
+  "num_episodes": 10,
+  "seeker_wins": 6,
+  "hider_wins": 4,
+  "seeker_win_rate": 0.6,
+  "hider_win_rate": 0.4,
+  "avg_duration": 6.15000935792923,
+  "min_duration": 0.8999997973442078,
+  "max_duration": 10.000019073486328,
+  "std_duration": 3.893658988817193
+}
