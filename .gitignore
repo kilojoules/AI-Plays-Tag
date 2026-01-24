@@ -19,6 +19,10 @@ venv/
 # Logs
 *.log
 
+# Experiment results (keep structure, ignore data)
+experiments/results/
+
 # Local tooling bundles
 Godot.app/
 .pixi/
+sandwich-reef/

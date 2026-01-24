@@ -446,9 +446,13 @@ class FastTrainer:
             if update % self.config.save_interval == 0:
                 self.save_checkpoint(update)
 
+        # Always log final metrics
+        elapsed = time.time() - start_time
+        fps = timesteps / elapsed if elapsed > 0 else 0
+        self._log_metrics(update, timesteps, train_info, fps, elapsed)
+
         self.save_final()
 
-        elapsed = time.time() - start_time
         print(f"\nTraining complete!")
         print(f"  Total time: {elapsed:.1f}s")
         print(f"  Total episodes: {self.total_episodes}")

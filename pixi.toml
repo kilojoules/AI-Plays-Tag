@@ -1,6 +1,6 @@
 # Pixi environment for AI Tag Game (open-source only)
 
-[project]
+[workspace]
 name = "ai-tag-game"
 channels = ["conda-forge", "pytorch"]
 platforms = ["osx-64", "osx-arm64", "linux-64", "win-64"]
@@ -14,6 +14,7 @@ ffmpeg = "*"
 
 [feature.rl.dependencies]
 pytorch = ">=2.2"
+gymnasium = "*"
 
 [environments]
 default = { features = ["server"] }
@@ -42,3 +43,8 @@ visualize-anim = "python trainer/visualize_outcome.py --animate"
 
 # Demo in Godot (requires Godot)
 demo = "bash scripts/demo_trained.sh"
+
+# Experiments: Self-play vs SCRO comparison
+exp-scro = "python experiments/train_scro.py"
+exp-compare = "python experiments/run_comparison.py"
+exp-visualize = "python experiments/visualize_comparison.py"
