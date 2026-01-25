@@ -130,31 +130,25 @@ def plot_learning_curves(
 
     # Plot means if multiple runs
     if len(vanilla_runs) > 1:
-        max_len = max(len(d.get("timesteps", [])) for d in vanilla_runs)
-        if max_len > 0:
-            mean_wr = np.zeros(max_len)
-            count = np.zeros(max_len)
+        min_len = min(len(d.get("timesteps", [])) for d in vanilla_runs if d.get("timesteps"))
+        if min_len > 0:
+            mean_wr = np.zeros(min_len)
             for data in vanilla_runs:
-                for j, wr in enumerate(data.get("seeker_win_rate", [])):
-                    if j < max_len:
-                        mean_wr[j] += wr
-                        count[j] += 1
-            mean_wr = mean_wr / np.maximum(count, 1)
-            timesteps = vanilla_runs[0].get("timesteps", list(range(max_len)))[:max_len]
+                wr = data.get("seeker_win_rate", [])[:min_len]
+                mean_wr[:len(wr)] += wr
+            mean_wr = mean_wr / len(vanilla_runs)
+            timesteps = vanilla_runs[0].get("timesteps", list(range(min_len)))[:min_len]
             ax.plot(timesteps, mean_wr, 'b-', linewidth=2, label='Vanilla (mean)')
 
     if len(scro_runs) > 1:
-        max_len = max(len(d.get("timesteps", [])) for d in scro_runs)
-        if max_len > 0:
-            mean_wr = np.zeros(max_len)
-            count = np.zeros(max_len)
+        min_len = min(len(d.get("timesteps", [])) for d in scro_runs if d.get("timesteps"))
+        if min_len > 0:
+            mean_wr = np.zeros(min_len)
             for data in scro_runs:
-                for j, wr in enumerate(data.get("protagonist_win_rate", [])):
-                    if j < max_len:
-                        mean_wr[j] += wr
-                        count[j] += 1
-            mean_wr = mean_wr / np.maximum(count, 1)
-            timesteps = scro_runs[0].get("timesteps", list(range(max_len)))[:max_len]
+                wr = data.get("protagonist_win_rate", [])[:min_len]
+                mean_wr[:len(wr)] += wr
+            mean_wr = mean_wr / len(scro_runs)
+            timesteps = scro_runs[0].get("timesteps", list(range(min_len)))[:min_len]
             ax.plot(timesteps, mean_wr, 'r-', linewidth=2, label='SCRO (mean)')
 
     ax.set_xlabel('Timesteps')
