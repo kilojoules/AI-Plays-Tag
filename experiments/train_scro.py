@@ -49,9 +49,9 @@ class SCROConfig:
     mutation_std: float = 0.02
 
     # Training
-    num_generations: int = 50
+    num_generations: int = 30
     training_steps_per_gen: int = 4096
-    eval_episodes: int = 5
+    eval_episodes: int = 2  # Reduced for faster round-robin evaluation
     learning_rate: float = 3e-4
     hidden_sizes: List[int] = field(default_factory=lambda: [128, 128])
 
@@ -164,9 +164,29 @@ class SCROTrainer:
             writer = csv.writer(f)
             writer.writerow(row)
 
-    def initialize_population(self):
-        """Initialize the reef with random agents."""
+    def initialize_population(self, pretrained_seeker: Optional[str] = None,
+                               pretrained_hider: Optional[str] = None):
+        """Initialize the reef with agents.
+
+        If pre-trained policies are provided, all agents start from those weights
+        with small random perturbations for diversity.
+        """
         print(f"Initializing {self.config.grid_rows}x{self.config.grid_cols} reef...")
+
+        # Load pre-trained weights if provided
+        seeker_weights = None
+        hider_weights = None
+
+        if pretrained_seeker:
+            print(f"  Loading pre-trained seeker from: {pretrained_seeker}")
+            checkpoint = torch.load(pretrained_seeker, map_location='cpu', weights_only=True)
+            # Convert vanilla PPO format to SCRO format
+            seeker_weights = self._convert_vanilla_to_scro(checkpoint)
+
+        if pretrained_hider:
+            print(f"  Loading pre-trained hider from: {pretrained_hider}")
+            checkpoint = torch.load(pretrained_hider, map_location='cpu', weights_only=True)
+            hider_weights = self._convert_vanilla_to_scro(checkpoint)
 
         for i in range(self.reef.rows):
             for j in range(self.reef.cols):
@@ -176,31 +196,111 @@ class SCROTrainer:
                 prot_cell.initialize_agent(self.config.learning_rate)
                 antag_cell.initialize_agent(self.config.learning_rate)
 
+                # Load pre-trained weights with small perturbation for diversity
+                if seeker_weights is not None:
+                    self._load_with_perturbation(prot_cell.agent, seeker_weights,
+                                                  perturbation_std=0.01)
+                if hider_weights is not None:
+                    self._load_with_perturbation(antag_cell.agent, hider_weights,
+                                                  perturbation_std=0.01)
+
         print(f"  Protagonists (seekers): {self.reef.count_occupied('protagonist')}")
         print(f"  Antagonists (hiders): {self.reef.count_occupied('adversary')}")
+        if seeker_weights or hider_weights:
+            print(f"  Initialized from pre-trained policies with perturbation")
+
+    def _convert_vanilla_to_scro(self, vanilla_checkpoint: dict) -> dict:
+        """Convert vanilla PPO checkpoint format to SCRO agent format.
+
+        Vanilla format: {"pi": {fc1.weight, fc1.bias, fc2.weight, ...}, "vf": {...}}
+        SCRO format: {policy.0.weight, policy.0.bias, policy.2.weight, ...}
+        """
+        pi_state = vanilla_checkpoint["pi"]
+        scro_state = {}
+
+        # Map vanilla layer names to SCRO layer names
+        # Vanilla: fc1, fc2, fc3 (mean layer)
+        # SCRO: policy.0, policy.2, policy.4 (Sequential with ReLU between)
+        layer_map = {
+            "fc1.weight": "policy.0.weight",
+            "fc1.bias": "policy.0.bias",
+            "fc2.weight": "policy.2.weight",
+            "fc2.bias": "policy.2.bias",
+            "fc3.weight": "policy.4.weight",
+            "fc3.bias": "policy.4.bias",
+        }
+
+        for vanilla_name, scro_name in layer_map.items():
+            if vanilla_name in pi_state:
+                scro_state[scro_name] = pi_state[vanilla_name]
+
+        return scro_state
+
+    def _load_with_perturbation(self, agent, weights: dict, perturbation_std: float = 0.01):
+        """Load weights into agent with small random perturbation for diversity."""
+        current_state = agent.state_dict()
+
+        for name, param in weights.items():
+            if name in current_state and current_state[name].shape == param.shape:
+                # Add small perturbation
+                noise = torch.randn_like(param) * perturbation_std
+                current_state[name] = param + noise
+
+        agent.load_state_dict(current_state, strict=False)
 
     def evaluate_population(self):
-        """Evaluate all protagonist-antagonist pairs."""
+        """Evaluate all agents using round-robin against ALL opponents.
+
+        Each seeker plays against every hider, and vice versa.
+        Fitness is the average performance across all opponents.
+        This prevents overfitting to a single local opponent.
+        """
         prot_cells = self.reef.get_occupied_cells("protagonist")
+        antag_cells = self.reef.get_occupied_cells("adversary")
 
+        if not prot_cells or not antag_cells:
+            return
+
+        # Reset fitness accumulators
+        prot_fitness_sums = {id(c): 0.0 for c in prot_cells}
+        prot_fitness_counts = {id(c): 0 for c in prot_cells}
+        antag_fitness_sums = {id(c): 0.0 for c in antag_cells}
+        antag_fitness_counts = {id(c): 0 for c in antag_cells}
+
+        # Round-robin: each protagonist vs each antagonist
         for prot_cell in prot_cells:
-            i, j = prot_cell.position
-            antag_cell = self.reef.get_cell(i, j, "adversary")
+            for antag_cell in antag_cells:
+                # Evaluate this matchup
+                prot_reward = evaluate_agent(
+                    agent=prot_cell.agent,
+                    opponent=antag_cell.agent,
+                    env_fn=self._make_env,
+                    device=self.device,
+                    is_protagonist=True,
+                    num_episodes=max(1, self.config.eval_episodes // len(antag_cells)),
+                )
 
-            if not antag_cell.occupied:
-                continue
+                # Accumulate fitness for both agents
+                prot_fitness_sums[id(prot_cell)] += prot_reward
+                prot_fitness_counts[id(prot_cell)] += 1
 
-            # Evaluate protagonist (seeker) against antagonist (hider)
-            prot_cell.fitness_adversarial = evaluate_agent(
-                agent=prot_cell.agent,
-                opponent=antag_cell.agent,
-                env_fn=self._make_env,
-                device=self.device,
-                is_protagonist=True,
-                num_episodes=self.config.eval_episodes,
-            )
+                # Antagonist gets inverse reward
+                antag_fitness_sums[id(antag_cell)] += (-prot_reward)
+                antag_fitness_counts[id(antag_cell)] += 1
 
-            # Evaluate protagonist alone (clean fitness)
+                # Track wins
+                if prot_reward > 0:
+                    self.protagonist_wins += 1
+                else:
+                    self.antagonist_wins += 1
+
+        # Compute average fitness across all opponents
+        for prot_cell in prot_cells:
+            count = prot_fitness_counts[id(prot_cell)]
+            if count > 0:
+                prot_cell.fitness_adversarial = prot_fitness_sums[id(prot_cell)] / count
+
+            # Clean fitness (vs no opponent) - used for budding selection
             prot_cell.fitness_clean = evaluate_agent(
                 agent=prot_cell.agent,
                 opponent=None,
@@ -210,10 +310,12 @@ class SCROTrainer:
                 num_episodes=self.config.eval_episodes,
             )
 
-            # Antagonist fitness (inverse of protagonist success)
-            antag_cell.fitness_adversarial = -prot_cell.fitness_adversarial
+        for antag_cell in antag_cells:
+            count = antag_fitness_counts[id(antag_cell)]
+            if count > 0:
+                antag_cell.fitness_adversarial = antag_fitness_sums[id(antag_cell)] / count
 
-            # Antagonist clean fitness
+            # Clean fitness
             antag_cell.fitness_clean = evaluate_agent(
                 agent=antag_cell.agent,
                 opponent=None,
@@ -223,24 +325,23 @@ class SCROTrainer:
                 num_episodes=self.config.eval_episodes,
             )
 
-            # Track wins
-            if prot_cell.fitness_adversarial > 0:
-                self.protagonist_wins += self.config.eval_episodes
-            else:
-                self.antagonist_wins += self.config.eval_episodes
-
     def train_population(self):
-        """Train all occupied cells via PPO."""
+        """Train all occupied cells via PPO against random opponents.
+
+        Each agent trains against a randomly sampled opponent from the
+        opposing population, promoting diverse strategy learning.
+        """
         prot_cells = self.reef.get_occupied_cells("protagonist")
+        antag_cells = self.reef.get_occupied_cells("adversary")
 
+        if not prot_cells or not antag_cells:
+            return
+
+        # Train each protagonist against a random antagonist
         for prot_cell in prot_cells:
-            i, j = prot_cell.position
-            antag_cell = self.reef.get_cell(i, j, "adversary")
+            # Sample random opponent from antagonist population
+            antag_cell = self.rng.choice(antag_cells)
 
-            if not antag_cell.occupied:
-                continue
-
-            # Train protagonist (seeker) against antagonist (hider)
             train_agent_ppo(
                 agent=prot_cell.agent,
                 optimizer=prot_cell.optimizer,
@@ -251,8 +352,13 @@ class SCROTrainer:
                 is_protagonist=True,
                 num_steps=self.config.training_steps_per_gen,
             )
+            self.total_timesteps += self.config.training_steps_per_gen
 
-            # Train antagonist (hider) against protagonist (seeker)
+        # Train each antagonist against a random protagonist
+        for antag_cell in antag_cells:
+            # Sample random opponent from protagonist population
+            prot_cell = self.rng.choice(prot_cells)
+
             train_agent_ppo(
                 agent=antag_cell.agent,
                 optimizer=antag_cell.optimizer,
@@ -263,8 +369,7 @@ class SCROTrainer:
                 is_protagonist=False,
                 num_steps=self.config.training_steps_per_gen,
             )
-
-            self.total_timesteps += self.config.training_steps_per_gen * 2
+            self.total_timesteps += self.config.training_steps_per_gen
 
     def apply_cro_dynamics(self, layer: str):
         """Apply CRO evolutionary operators to a layer."""
@@ -362,7 +467,8 @@ class SCROTrainer:
 
         print(f"\nFinal policies saved to {self.output_dir}")
 
-    def train(self):
+    def train(self, pretrained_seeker: Optional[str] = None,
+              pretrained_hider: Optional[str] = None):
         """Main SCRO training loop."""
         print(f"Starting SCRO training for {self.config.num_generations} generations")
         print(f"  Grid: {self.config.grid_rows}x{self.config.grid_cols}")
@@ -370,7 +476,7 @@ class SCROTrainer:
         print(f"  Output: {self.output_dir}\n")
 
         start_time = time.time()
-        self.initialize_population()
+        self.initialize_population(pretrained_seeker, pretrained_hider)
 
         for gen in range(self.config.num_generations):
             self.generation = gen + 1
@@ -399,8 +505,8 @@ class SCROTrainer:
                   f"Seeker WR: {win_rate:.1%} | "
                   f"Time: {gen_time:.1f}s")
 
-            # Save checkpoint every 10 generations
-            if (gen + 1) % 10 == 0:
+            # Save checkpoint every 5 generations
+            if (gen + 1) % 5 == 0:
                 self.save_best_agents(gen + 1)
 
         self.save_final()
@@ -425,6 +531,13 @@ def main():
                         help="Random seed")
     parser.add_argument("--output-dir", type=str, default="experiments/results/scro",
                         help="Output directory")
+    parser.add_argument("--layout", type=str, default="empty",
+                        choices=["empty", "four_corners", "central_cross"],
+                        help="Arena layout with obstacles (default: empty)")
+    parser.add_argument("--pretrained-seeker", type=str, default=None,
+                        help="Path to pre-trained seeker policy (vanilla format)")
+    parser.add_argument("--pretrained-hider", type=str, default=None,
+                        help="Path to pre-trained hider policy (vanilla format)")
 
     args = parser.parse_args()
 
@@ -437,8 +550,12 @@ def main():
         output_dir=args.output_dir,
     )
 
-    trainer = SCROTrainer(config)
-    trainer.train()
+    # Create environment config with layout
+    env_config = TagEnvConfig(layout=args.layout)
+
+    trainer = SCROTrainer(config, env_config=env_config)
+    trainer.train(pretrained_seeker=args.pretrained_seeker,
+                  pretrained_hider=args.pretrained_hider)
 
 
 if __name__ == "__main__":

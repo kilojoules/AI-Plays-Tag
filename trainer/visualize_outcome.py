@@ -36,7 +36,7 @@ except ImportError:
     print("PyTorch required. Install with: pip install torch", file=sys.stderr)
     sys.exit(1)
 
-from tag_env import SingleTagEnv, TagEnvConfig
+from tag_env import SingleTagEnv, TagEnvConfig, Obstacle, SafeZone, LAYOUTS
 from ppo import PPOConfig, PPOAgent
 
 
@@ -44,11 +44,20 @@ class OutcomeVisualizer:
     """Visualizes outcomes from trained tag agents."""
 
     def __init__(self, seeker_policy_path: str, hider_policy_path: str,
-                 output_dir: str = "trainer/visualizations"):
+                 output_dir: str = "trainer/visualizations",
+                 layout: str = "empty"):
         self.output_dir = output_dir
+        self.layout = layout
         os.makedirs(output_dir, exist_ok=True)
 
-        self.env = SingleTagEnv()
+        # Create env config with layout
+        env_config = TagEnvConfig(layout=layout)
+        self.env = SingleTagEnv(config=env_config)
+
+        # Store layout info for rendering
+        layout_data = LAYOUTS.get(layout, LAYOUTS['empty'])
+        self.obstacles = layout_data['obstacles']
+        self.safe_zone = layout_data['safe_zone']
 
         # Load policies
         ppo_cfg = PPOConfig(obs_dim=self.env.obs_dim, act_dim=self.env.act_dim)
@@ -81,6 +90,13 @@ class OutcomeVisualizer:
             'distances': [],
             'tagged': False,
             'duration': 0.0,
+            'obstacles': self.obstacles,
+            'safe_zone': self.safe_zone,
+            'safe_zone_states': [{
+                'time': state['safe_zone_time'],
+                'exhausted': state['safe_zone_exhausted'],
+                'cooldown': state['safe_zone_cooldown'],
+            }],
         }
 
         done = False
@@ -99,6 +115,11 @@ class OutcomeVisualizer:
             trajectory['hider_positions'].append(state['positions'][1 - seeker_idx].tolist())
             trajectory['timestamps'].append(state['time_elapsed'])
             trajectory['distances'].append(info['distances'])
+            trajectory['safe_zone_states'].append({
+                'time': state['safe_zone_time'],
+                'exhausted': state['safe_zone_exhausted'],
+                'cooldown': state['safe_zone_cooldown'],
+            })
 
         trajectory['tagged'] = info['tagged']
         trajectory['duration'] = state['time_elapsed']
@@ -147,6 +168,31 @@ class OutcomeVisualizer:
 
         return {'trajectories': trajectories, 'stats': stats}
 
+    def _draw_arena_features(self, ax, trajectory: Optional[Dict[str, Any]] = None):
+        """Draw obstacles and safe zone on the axis."""
+        # Get obstacles and safe zone from trajectory or instance
+        obstacles = trajectory.get('obstacles', self.obstacles) if trajectory else self.obstacles
+        safe_zone = trajectory.get('safe_zone', self.safe_zone) if trajectory else self.safe_zone
+
+        # Draw obstacles as gray rectangles
+        for obs in obstacles:
+            rect = Rectangle(
+                (obs.x - obs.half_width, obs.y - obs.half_height),
+                obs.half_width * 2, obs.half_height * 2,
+                fill=True, facecolor='gray', edgecolor='darkgray',
+                linewidth=2, alpha=0.8, zorder=2
+            )
+            ax.add_patch(rect)
+
+        # Draw safe zone as semi-transparent green circle
+        if safe_zone is not None:
+            circle = Circle(
+                (safe_zone.x, safe_zone.y), safe_zone.radius,
+                fill=True, facecolor='lightgreen', edgecolor='green',
+                linewidth=2, alpha=0.4, zorder=1
+            )
+            ax.add_patch(circle)
+
     def plot_trajectory(self, trajectory: Dict[str, Any], filename: str):
         """Plot a single episode trajectory."""
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -155,6 +201,9 @@ class OutcomeVisualizer:
         arena = Rectangle((-arena_half, -arena_half), arena_half * 2, arena_half * 2,
                          fill=False, edgecolor='black', linewidth=2)
         ax.add_patch(arena)
+
+        # Draw obstacles and safe zone
+        self._draw_arena_features(ax, trajectory)
 
         # Convert to numpy arrays
         seeker_pos = np.array(trajectory['seeker_positions'])
@@ -168,12 +217,12 @@ class OutcomeVisualizer:
         # Plot seeker trajectory
         for i in range(n_points - 1):
             ax.plot(seeker_pos[i:i+2, 0], seeker_pos[i:i+2, 1],
-                   color=colors_seeker[i], linewidth=2)
+                   color=colors_seeker[i], linewidth=2, zorder=3)
 
         # Plot hider trajectory
         for i in range(n_points - 1):
             ax.plot(hider_pos[i:i+2, 0], hider_pos[i:i+2, 1],
-                   color=colors_hider[i], linewidth=2)
+                   color=colors_hider[i], linewidth=2, zorder=3)
 
         # Mark start positions
         ax.scatter(seeker_pos[0, 0], seeker_pos[0, 1], c='red', s=100,
@@ -214,6 +263,9 @@ class OutcomeVisualizer:
                          fill=False, edgecolor='black', linewidth=2)
         ax.add_patch(arena)
 
+        # Draw obstacles and safe zone (use first trajectory or instance data)
+        self._draw_arena_features(ax, trajectories[0] if trajectories else None)
+
         # Separate by outcome
         tagged_trajs = [t for t in trajectories if t['tagged']][:max_episodes // 2]
         escaped_trajs = [t for t in trajectories if not t['tagged']][:max_episodes // 2]
@@ -222,15 +274,15 @@ class OutcomeVisualizer:
         for traj in tagged_trajs:
             seeker_pos = np.array(traj['seeker_positions'])
             hider_pos = np.array(traj['hider_positions'])
-            ax.plot(seeker_pos[:, 0], seeker_pos[:, 1], 'r-', alpha=0.3, linewidth=1)
-            ax.plot(hider_pos[:, 0], hider_pos[:, 1], 'b-', alpha=0.3, linewidth=1)
+            ax.plot(seeker_pos[:, 0], seeker_pos[:, 1], 'r-', alpha=0.3, linewidth=1, zorder=3)
+            ax.plot(hider_pos[:, 0], hider_pos[:, 1], 'b-', alpha=0.3, linewidth=1, zorder=3)
 
         # Plot escaped episodes (hider wins) in blue tones
         for traj in escaped_trajs:
             seeker_pos = np.array(traj['seeker_positions'])
             hider_pos = np.array(traj['hider_positions'])
-            ax.plot(seeker_pos[:, 0], seeker_pos[:, 1], 'orange', alpha=0.3, linewidth=1)
-            ax.plot(hider_pos[:, 0], hider_pos[:, 1], 'cyan', alpha=0.3, linewidth=1)
+            ax.plot(seeker_pos[:, 0], seeker_pos[:, 1], 'orange', alpha=0.3, linewidth=1, zorder=3)
+            ax.plot(hider_pos[:, 0], hider_pos[:, 1], 'cyan', alpha=0.3, linewidth=1, zorder=3)
 
         # Legend
         ax.plot([], [], 'r-', label=f'Seeker (tagged: {len(tagged_trajs)})', alpha=0.5)
@@ -299,12 +351,21 @@ class OutcomeVisualizer:
         hider_pos = np.array(trajectory['hider_positions'])
         n_frames = len(seeker_pos)
 
+        # Get obstacles and safe zone from trajectory
+        obstacles = trajectory.get('obstacles', self.obstacles)
+        safe_zone = trajectory.get('safe_zone', self.safe_zone)
+        safe_zone_states = trajectory.get('safe_zone_states', [])
+
         # Debug: print trajectory info
         print(f"  Creating animation with {n_frames} frames")
         print(f"  Seeker start: ({seeker_pos[0][0]:.1f}, {seeker_pos[0][1]:.1f})")
         print(f"  Hider start: ({hider_pos[0][0]:.1f}, {hider_pos[0][1]:.1f})")
         print(f"  Seeker end: ({seeker_pos[-1][0]:.1f}, {seeker_pos[-1][1]:.1f})")
         print(f"  Hider end: ({hider_pos[-1][0]:.1f}, {hider_pos[-1][1]:.1f})")
+        if obstacles:
+            print(f"  Obstacles: {len(obstacles)}")
+        if safe_zone:
+            print(f"  Safe zone at ({safe_zone.x}, {safe_zone.y}), radius {safe_zone.radius}")
 
         arena_half = 15.0
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -317,12 +378,50 @@ class OutcomeVisualizer:
                              fill=False, edgecolor='black', linewidth=2)
             ax.add_patch(arena)
 
+            # Draw obstacles as gray rectangles
+            for obs in obstacles:
+                rect = Rectangle(
+                    (obs.x - obs.half_width, obs.y - obs.half_height),
+                    obs.half_width * 2, obs.half_height * 2,
+                    fill=True, facecolor='gray', edgecolor='darkgray',
+                    linewidth=2, alpha=0.8, zorder=2
+                )
+                ax.add_patch(rect)
+
+            # Draw safe zone with pulsing effect and exhaustion state
+            if safe_zone is not None:
+                # Determine safe zone color based on state
+                sz_state = safe_zone_states[frame] if frame < len(safe_zone_states) else {}
+                is_exhausted = sz_state.get('exhausted', False)
+
+                # Pulsing effect: vary alpha and radius slightly
+                t = trajectory['timestamps'][frame]
+                pulse = 0.1 * np.sin(t * 4)  # Pulse frequency
+
+                if is_exhausted:
+                    # Red/orange when exhausted (no protection)
+                    zone_color = 'lightsalmon'
+                    edge_color = 'red'
+                    base_alpha = 0.3
+                else:
+                    # Green when protected
+                    zone_color = 'lightgreen'
+                    edge_color = 'green'
+                    base_alpha = 0.4
+
+                circle = Circle(
+                    (safe_zone.x, safe_zone.y), safe_zone.radius * (1 + pulse * 0.1),
+                    fill=True, facecolor=zone_color, edgecolor=edge_color,
+                    linewidth=2, alpha=base_alpha + pulse * 0.1, zorder=1
+                )
+                ax.add_patch(circle)
+
             # Draw trails (path history)
             if frame > 0:
                 ax.plot(seeker_pos[:frame+1, 0], seeker_pos[:frame+1, 1],
-                       'r-', alpha=0.4, linewidth=2, label='Seeker path')
+                       'r-', alpha=0.4, linewidth=2, label='Seeker path', zorder=3)
                 ax.plot(hider_pos[:frame+1, 0], hider_pos[:frame+1, 1],
-                       'b-', alpha=0.4, linewidth=2, label='Hider path')
+                       'b-', alpha=0.4, linewidth=2, label='Hider path', zorder=3)
 
             # Draw agents as circles
             seeker = plt.Circle(seeker_pos[frame], 0.8, color='red', zorder=5, label='Seeker')
@@ -482,6 +581,9 @@ def main():
                         help="Output directory")
     parser.add_argument("--animate", action="store_true",
                         help="Create animated MP4 videos (requires ffmpeg)")
+    parser.add_argument("--layout", type=str, default="empty",
+                        choices=["empty", "four_corners", "central_cross"],
+                        help="Arena layout (default: empty)")
 
     args = parser.parse_args()
 
@@ -489,6 +591,7 @@ def main():
         seeker_policy_path=args.seeker_policy,
         hider_policy_path=args.hider_policy,
         output_dir=args.output_dir,
+        layout=args.layout,
     )
 
     visualizer.visualize(num_episodes=args.episodes, create_anim=args.animate)

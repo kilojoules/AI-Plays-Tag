@@ -121,8 +121,12 @@ class PPOAgent:
             loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
             loss_v = 0.5 * ((ret - value) ** 2).mean()
             approx_kl = (logp_old_t - logp).mean().item()
-            self.pi_opt.zero_grad(); loss_pi.backward(); self.pi_opt.step()
-            self.vf_opt.zero_grad(); loss_v.backward(); self.vf_opt.step()
+            self.pi_opt.zero_grad(); loss_pi.backward()
+            torch.nn.utils.clip_grad_norm_(self.pi.parameters(), max_norm=0.5)
+            self.pi_opt.step()
+            self.vf_opt.zero_grad(); loss_v.backward()
+            torch.nn.utils.clip_grad_norm_(self.vf.parameters(), max_norm=0.5)
+            self.vf_opt.step()
             info = {
                 "policy_loss": float(loss_pi.item()),
                 "value_loss": float(loss_v.item()),

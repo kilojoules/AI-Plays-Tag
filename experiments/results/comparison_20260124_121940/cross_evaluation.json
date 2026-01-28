@@ -1,0 +1,40 @@
+{
+  "seed": 42,
+  "episodes_per_matchup": 200,
+  "matchups": {
+    "Vanilla Seeker vs Vanilla Hider": {
+      "seeker_win_rate": 0.915,
+      "hider_win_rate": 0.085,
+      "avg_episode_length": 91.29,
+      "seeker_reward_mean": 8.7277155603352,
+      "hider_reward_mean": -8.27126556821633
+    },
+    "Vanilla Seeker vs SCRO Hider": {
+      "seeker_win_rate": 0.985,
+      "hider_win_rate": 0.015,
+      "avg_episode_length": 76.305,
+      "seeker_reward_mean": 9.93388006701949,
+      "hider_reward_mean": -9.552355047056917
+    },
+    "SCRO Seeker vs Vanilla Hider": {
+      "seeker_win_rate": 0.595,
+      "hider_win_rate": 0.405,
+      "avg_episode_length": 140.59,
+      "seeker_reward_mean": 1.9944989503617399,
+      "hider_reward_mean": -1.2915489581925794
+    },
+    "SCRO Seeker vs SCRO Hider": {
+      "seeker_win_rate": 0.575,
+      "hider_win_rate": 0.425,
+      "avg_episode_length": 123.525,
+      "seeker_reward_mean": 1.288342198440805,
+      "hider_reward_mean": -0.6707172359875403
+    }
+  },
+  "summary": {
+    "vanilla_seeker_avg_win_rate": 0.95,
+    "scro_seeker_avg_win_rate": 0.585,
+    "vanilla_hider_avg_survival_rate": 0.245,
+    "scro_hider_avg_survival_rate": 0.21999999999999997
+  }
+}

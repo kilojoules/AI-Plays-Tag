@@ -1,0 +1,17 @@
+{
+  "run_id": "20260126_073952",
+  "algorithm": "SCRO",
+  "num_generations": 20,
+  "total_timesteps": 1363968,
+  "protagonist_wins": 285,
+  "antagonist_wins": 1103,
+  "protagonist_win_rate": 0.2053314121037464,
+  "config": {
+    "grid_rows": 3,
+    "grid_cols": 3,
+    "gauntlet_fraction": 0.5,
+    "mutation_std": 0.02,
+    "training_steps_per_gen": 4096,
+    "seed": 42
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "timestamp": "20260124_121940",
+  "seeds": [
+    42,
+    123
+  ],
+  "vanilla_timesteps": 552960,
+  "scro_config": {
+    "generations": 15,
+    "grid_size": 3,
+    "training_steps": 2048
+  },
+  "results": [
+    {
+      "algorithm": "vanilla_selfplay",
+      "seed": 42,
+      "run_dir": "experiments/results/comparison_20260124_121940/vanilla_selfplay/seed_42",
+      "elapsed": 1230.934623003006,
+      "error": "No metadata found"
+    },
+    {
+      "algorithm": "vanilla_selfplay",
+      "seed": 123,
+      "run_dir": "experiments/results/comparison_20260124_121940/vanilla_selfplay/seed_123",
+      "elapsed": 1279.6796023845673,
+      "error": "No metadata found"
+    },
+    {
+      "algorithm": "scro",
+      "seed": 42,
+      "grid_size": 3,
+      "run_dir": "experiments/results/comparison_20260124_121940/scro/seed_42/20260124_130132",
+      "elapsed": 773.2402989864349,
+      "metadata": {
+        "run_id": "20260124_130132",
+        "algorithm": "SCRO",
+        "num_generations": 15,
+        "total_timesteps": 446464,
+        "protagonist_wins": 150,
+        "antagonist_wins": 395,
+        "protagonist_win_rate": 0.27522935779816515,
+        "config": {
+          "grid_rows": 3,
+          "grid_cols": 3,
+          "gauntlet_fraction": 0.5,
+          "mutation_std": 0.02,
+          "training_steps_per_gen": 2048,
+          "seed": 42
+        }
+      }
+    },
+    {
+      "algorithm": "scro",
+      "seed": 123,
+      "grid_size": 3,
+      "run_dir": "experiments/results/comparison_20260124_121940/scro/seed_123/20260124_131425",
+      "elapsed": 752.0198321342468,
+      "metadata": {
+        "run_id": "20260124_131425",
+        "algorithm": "SCRO",
+        "num_generations": 15,
+        "total_timesteps": 430080,
+        "protagonist_wins": 120,
+        "antagonist_wins": 405,
+        "protagonist_win_rate": 0.22857142857142856,
+        "config": {
+          "grid_rows": 3,
+          "grid_cols": 3,
+          "gauntlet_fraction": 0.5,
+          "mutation_std": 0.02,
+          "training_steps_per_gen": 2048,
+          "seed": 123
+        }
+      }
+    }
+  ]
+}

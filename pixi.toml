@@ -37,9 +37,16 @@ train = "python trainer/train_fast.py"
 train-quick = "python trainer/train_fast.py --timesteps 100000"
 train-full = "python trainer/train_fast.py --timesteps 1000000"
 
+# Training with obstacles
+train-obstacles = "python trainer/train_fast.py --layout four_corners"
+train-obstacles-quick = "python trainer/train_fast.py --layout four_corners --timesteps 100000"
+train-obstacles-full = "python trainer/train_fast.py --layout four_corners --timesteps 1000000"
+
 # Visualization
 visualize = "python trainer/visualize_outcome.py"
 visualize-anim = "python trainer/visualize_outcome.py --animate"
+visualize-obstacles = "python trainer/visualize_outcome.py --layout four_corners"
+visualize-obstacles-anim = "python trainer/visualize_outcome.py --layout four_corners --animate"
 
 # Demo in Godot (requires Godot)
 demo = "bash scripts/demo_trained.sh"
@@ -49,3 +56,7 @@ exp-scro = "python experiments/train_scro.py"
 exp-compare = "python experiments/run_comparison.py"
 exp-visualize = "python experiments/visualize_comparison.py"
 exp-crossplay = "python experiments/cross_evaluate.py"
+
+[dependencies]
+pytorch = ">=2.10.0,<3"
+pandas = ">=3.0.0,<4"

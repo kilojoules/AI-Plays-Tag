@@ -1,0 +1,7 @@
+{"type": "episode_start", "ts": 0}
+{"type": "step", "agent": "Seeker", "pos": [12.693021774291992, 0.0, 5.917801856994629], "is_it": true, "ts": 0}
+{"type": "step", "agent": "Hider", "pos": [13.0, 0.0, 6.078189373016357], "is_it": false, "ts": 0}
+{"type": "step", "agent": "Seeker", "pos": [12.600690841674805, 0.0, 5.811864376068115], "is_it": true, "ts": 50}
+{"type": "step", "agent": "Hider", "pos": [12.796783447265625, 0.0, 6.14729642868042], "is_it": false, "ts": 50}
+{"type": "tag", "attacker": "Seeker", "target": "Hider", "ts": 50}
+{"type": "episode_end", "ts": 50}

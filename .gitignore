@@ -19,8 +19,14 @@ venv/
 # Logs
 *.log
 
-# Experiment results (keep structure, ignore data)
-experiments/results/
+# Experiment results (allow visualizations, ignore large training data)
+experiments/results/**/checkpoints/
+experiments/results/**/metrics.csv
+experiments/results/**/*.pt
+!experiments/results/**/*.png
+!experiments/results/**/*.jpg
+!experiments/results/**/*.mp4
+!experiments/results/**/*.json
 
 # Local tooling bundles
 Godot.app/

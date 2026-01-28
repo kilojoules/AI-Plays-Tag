@@ -1,0 +1,60 @@
+{
+  "timestamp": "20260124_212516",
+  "seeds": [
+    42
+  ],
+  "layout": "four_corners",
+  "vanilla_timesteps": 552960,
+  "scro_config": {
+    "generations": 15,
+    "grid_size": 3,
+    "training_steps": 2048
+  },
+  "results": [
+    {
+      "algorithm": "vanilla_selfplay",
+      "seed": 42,
+      "run_dir": "experiments/results/obstacles/comparison_20260124_212516/vanilla_selfplay/seed_42/20260124_212519",
+      "elapsed": 5515.815519809723,
+      "metadata": {
+        "run_id": "20260124_212519",
+        "total_episodes": 4765,
+        "seeker_wins": 3447,
+        "hider_wins": 1318,
+        "seeker_win_rate": 0.7233997901364113,
+        "config": {
+          "num_envs": 64,
+          "total_timesteps": 552960,
+          "batch_size": 2048,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "lr": 0.0003
+        }
+      }
+    },
+    {
+      "algorithm": "scro",
+      "seed": 42,
+      "grid_size": 3,
+      "run_dir": "experiments/results/obstacles/comparison_20260124_212516/scro/seed_42/20260124_225713",
+      "elapsed": 2872.008321046829,
+      "metadata": {
+        "run_id": "20260124_225713",
+        "algorithm": "SCRO",
+        "num_generations": 15,
+        "total_timesteps": 430080,
+        "protagonist_wins": 35,
+        "antagonist_wins": 490,
+        "protagonist_win_rate": 0.06666666666666667,
+        "config": {
+          "grid_rows": 3,
+          "grid_cols": 3,
+          "gauntlet_fraction": 0.5,
+          "mutation_std": 0.02,
+          "training_steps_per_gen": 2048,
+          "seed": 42
+        }
+      }
+    }
+  ]
+}

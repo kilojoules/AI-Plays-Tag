@@ -27,6 +27,7 @@ def run_vanilla_selfplay(
     timesteps: int,
     seed: int,
     output_dir: str,
+    layout: str = "empty",
 ) -> Dict[str, Any]:
     """Run vanilla self-play training."""
     cmd = [
@@ -35,6 +36,7 @@ def run_vanilla_selfplay(
         "--timesteps", str(timesteps),
         "--num-envs", "64",
         "--output-dir", output_dir,
+        "--layout", layout,
     ]
 
     # Set seed via environment
@@ -80,6 +82,7 @@ def run_scro(
     grid_size: int,
     seed: int,
     output_dir: str,
+    layout: str = "empty",
 ) -> Dict[str, Any]:
     """Run SCRO training."""
     cmd = [
@@ -90,6 +93,7 @@ def run_scro(
         "--training-steps", str(training_steps),
         "--seed", str(seed),
         "--output-dir", output_dir,
+        "--layout", layout,
     ]
 
     print(f"\n{'='*60}")
@@ -157,6 +161,9 @@ def main():
                         help="Skip vanilla self-play runs")
     parser.add_argument("--skip-scro", action="store_true",
                         help="Skip SCRO runs")
+    parser.add_argument("--layout", type=str, default="empty",
+                        choices=["empty", "four_corners", "central_cross"],
+                        help="Arena layout with obstacles (default: empty)")
 
     args = parser.parse_args()
 
@@ -191,6 +198,7 @@ def main():
                 timesteps=vanilla_timesteps,
                 seed=seed,
                 output_dir=vanilla_dir,
+                layout=args.layout,
             )
             results.append(result)
 
@@ -206,6 +214,7 @@ def main():
                 grid_size=args.scro_grid_size,
                 seed=seed,
                 output_dir=scro_dir,
+                layout=args.layout,
             )
             results.append(result)
 
@@ -213,6 +222,7 @@ def main():
     summary = {
         "timestamp": timestamp,
         "seeds": args.seeds,
+        "layout": args.layout,
         "vanilla_timesteps": vanilla_timesteps,
         "scro_config": {
             "generations": args.scro_generations,

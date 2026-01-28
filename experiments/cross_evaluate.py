@@ -22,7 +22,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from trainer.tag_env import SingleTagEnv
+from trainer.tag_env import SingleTagEnv, TagEnvConfig
 from trainer.ppo import PPOAgent, PPOConfig
 from experiments.scro_core import Agent as SCROAgent
 
@@ -69,9 +69,10 @@ def evaluate_matchup(
     num_episodes: int = 100,
     max_steps: int = 200,
     seed: int = 42,
+    env_config: Optional[TagEnvConfig] = None,
 ) -> Dict[str, float]:
     """Evaluate a seeker vs hider matchup."""
-    env = SingleTagEnv()
+    env = SingleTagEnv(config=env_config)
     np.random.seed(seed)
 
     seeker_wins = 0
@@ -145,13 +146,19 @@ def main():
                         help="Which seed's policies to use")
     parser.add_argument("--output", type=str, default=None,
                         help="Output file for results (JSON)")
+    parser.add_argument("--layout", type=str, default="empty",
+                        choices=["empty", "four_corners", "central_cross"],
+                        help="Arena layout (default: empty)")
 
     args = parser.parse_args()
 
     exp_dir = Path(args.experiment_dir)
 
+    # Create environment config with layout
+    env_config = TagEnvConfig(layout=args.layout)
+
     # Create sample env to get dimensions
-    env = SingleTagEnv()
+    env = SingleTagEnv(config=env_config)
     obs_dim = env.obs_dim
     act_dim = env.act_dim
 
@@ -210,6 +217,7 @@ def main():
             hider_is_scro=hider_is_scro,
             num_episodes=args.episodes,
             seed=args.seed,
+            env_config=env_config,
         )
 
         results[matchup_name] = result

@@ -1,0 +1,21 @@
+============================================================
+Statistical Comparison Report
+============================================================
+
+Vanilla Self-Play:
+  N runs: 2
+  Mean final win rate: 0.888
+  Std: 0.031
+  Min: 0.857
+  Max: 0.919
+
+SCRO:
+  N runs: 2
+  Mean final win rate: 0.252
+  Std: 0.023
+  Min: 0.229
+  Max: 0.275
+
+------------------------------------------------------------
+Difference (SCRO - Vanilla): -0.636
+(scipy not available for statistical test)

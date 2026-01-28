@@ -475,6 +475,9 @@ def main():
                         help="Path to hider policy checkpoint")
     parser.add_argument("--output-dir", type=str, default="trainer/logs/fast_train",
                         help="Output directory")
+    parser.add_argument("--layout", type=str, default="empty",
+                        choices=["empty", "four_corners", "central_cross"],
+                        help="Arena layout with obstacles (default: empty)")
 
     args = parser.parse_args()
 
@@ -486,7 +489,10 @@ def main():
         output_dir=args.output_dir,
     )
 
-    trainer = FastTrainer(config)
+    # Create environment config with layout
+    env_config = TagEnvConfig(layout=args.layout)
+
+    trainer = FastTrainer(config, env_config=env_config)
 
     if args.load_seeker or args.load_hider:
         trainer.load_checkpoint(args.load_seeker, args.load_hider)
