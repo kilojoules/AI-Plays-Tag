@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=windfatq
+#SBATCH --partition=windq
 #SBATCH --job-name="tag"
 #SBATCH --time=2-00:00:00
 #SBATCH --ntasks-per-core 1
@@ -11,4 +11,4 @@
 #conEnv
 #eval "$(pixi shell-hook)"
 
-pixi run python experiments/run_zoo_sweep.py --max-parallel 10 --resume
+pixi run python experiments/run_zoo_sweep.py --max-parallel 10
