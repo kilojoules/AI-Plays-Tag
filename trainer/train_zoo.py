@@ -105,86 +105,74 @@ class OpponentZoo:
 
 
 class RolloutBuffer:
-    """Buffer for storing rollout data."""
+    """Buffer for storing single-role rollout data."""
 
-    def __init__(self, buffer_size: int, obs_dim: int, act_dim: int, num_envs: int):
-        self.buffer_size = buffer_size
+    def __init__(self, obs_dim: int, act_dim: int, num_envs: int):
         self.num_envs = num_envs
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
-
-        self.obs = {'seeker': [], 'hider': []}
-        self.actions = {'seeker': [], 'hider': []}
-        self.rewards = {'seeker': [], 'hider': []}
-        self.dones = {'seeker': [], 'hider': []}
-        self.log_probs = {'seeker': [], 'hider': []}
-        self.values = {'seeker': [], 'hider': []}
-
+        self.obs_list: List[np.ndarray] = []
+        self.actions_list: List[np.ndarray] = []
+        self.rewards_list: List[np.ndarray] = []
+        self.dones_list: List[np.ndarray] = []
+        self.log_probs_list: List[np.ndarray] = []
+        self.values_list: List[np.ndarray] = []
         self.ptr = 0
 
-    def add(self, obs: Dict[str, np.ndarray], actions: Dict[str, np.ndarray],
-            rewards: Dict[str, np.ndarray], dones: np.ndarray,
-            log_probs: Dict[str, np.ndarray], values: Dict[str, np.ndarray]):
-        for role in ['seeker', 'hider']:
-            self.obs[role].append(obs[role].copy())
-            self.actions[role].append(actions[role].copy())
-            self.rewards[role].append(rewards[role].copy())
-            self.dones[role].append(dones.copy())
-            self.log_probs[role].append(log_probs[role].copy())
-            self.values[role].append(values[role].copy())
+    def add(self, obs: np.ndarray, actions: np.ndarray, rewards: np.ndarray,
+            dones: np.ndarray, log_probs: np.ndarray, values: np.ndarray):
+        self.obs_list.append(obs.copy())
+        self.actions_list.append(actions.copy())
+        self.rewards_list.append(rewards.copy())
+        self.dones_list.append(dones.copy())
+        self.log_probs_list.append(log_probs.copy())
+        self.values_list.append(values.copy())
         self.ptr += 1
 
     def get_size(self) -> int:
         return self.ptr * self.num_envs
 
     def clear(self):
-        for role in ['seeker', 'hider']:
-            self.obs[role].clear()
-            self.actions[role].clear()
-            self.rewards[role].clear()
-            self.dones[role].clear()
-            self.log_probs[role].clear()
-            self.values[role].clear()
+        self.obs_list.clear()
+        self.actions_list.clear()
+        self.rewards_list.clear()
+        self.dones_list.clear()
+        self.log_probs_list.clear()
+        self.values_list.clear()
         self.ptr = 0
 
-    def compute_returns_and_advantages(self, last_values: Dict[str, np.ndarray],
-                                       gamma: float, gae_lambda: float) -> Dict[str, Tuple[np.ndarray, ...]]:
-        result = {}
-        for role in ['seeker', 'hider']:
-            obs = np.stack(self.obs[role])
-            actions = np.stack(self.actions[role])
-            rewards = np.stack(self.rewards[role])
-            dones = np.stack(self.dones[role])
-            log_probs = np.stack(self.log_probs[role])
-            values = np.stack(self.values[role])
+    def compute_returns_and_advantages(self, last_values: np.ndarray,
+                                       gamma: float, gae_lambda: float) -> Tuple[np.ndarray, ...]:
+        obs = np.stack(self.obs_list)
+        actions = np.stack(self.actions_list)
+        rewards = np.stack(self.rewards_list)
+        dones = np.stack(self.dones_list)
+        log_probs = np.stack(self.log_probs_list)
+        values = np.stack(self.values_list)
 
-            T, N = rewards.shape
-            advantages = np.zeros((T, N), dtype=np.float32)
-            last_gae = 0
+        T, N = rewards.shape
+        advantages = np.zeros((T, N), dtype=np.float32)
+        last_gae = 0
 
-            for t in reversed(range(T)):
-                if t == T - 1:
-                    next_value = last_values[role]
-                    next_done = np.zeros(N)
-                else:
-                    next_value = values[t + 1]
-                    next_done = dones[t + 1]
+        for t in reversed(range(T)):
+            if t == T - 1:
+                next_value = last_values
+                next_done = np.zeros(N)
+            else:
+                next_value = values[t + 1]
+                next_done = dones[t + 1]
 
-                mask = 1.0 - next_done.astype(np.float32)
-                delta = rewards[t] + gamma * next_value * mask - values[t]
-                advantages[t] = last_gae = delta + gamma * gae_lambda * mask * last_gae
+            mask = 1.0 - next_done.astype(np.float32)
+            delta = rewards[t] + gamma * next_value * mask - values[t]
+            advantages[t] = last_gae = delta + gamma * gae_lambda * mask * last_gae
 
-            returns = advantages + values
+        returns = advantages + values
 
-            result[role] = (
-                obs.reshape(-1, obs.shape[-1]),
-                actions.reshape(-1, actions.shape[-1]),
-                log_probs.reshape(-1),
-                returns.reshape(-1),
-                advantages.reshape(-1),
-            )
-
-        return result
+        return (
+            obs.reshape(-1, obs.shape[-1]),
+            actions.reshape(-1, actions.shape[-1]),
+            log_probs.reshape(-1),
+            returns.reshape(-1),
+            advantages.reshape(-1),
+        )
 
 
 class ZooTrainer:
@@ -230,6 +218,10 @@ class ZooTrainer:
         self.metrics_path = os.path.join(self.output_dir, "metrics.csv")
         self._init_metrics_csv()
 
+        # Resume state
+        self._resume_update = 0
+        self._resume_timesteps = 0
+
         # Stats
         self.ep_reward_buffer = {'seeker': [], 'hider': []}
         self.ep_len_buffer = []
@@ -241,7 +233,9 @@ class ZooTrainer:
         self.zoo_samples = {'seeker': 0, 'hider': 0}
         self.latest_samples = {'seeker': 0, 'hider': 0}
 
-    def _init_metrics_csv(self):
+    def _init_metrics_csv(self, append: bool = False):
+        if append:
+            return  # Keep existing file, will append
         columns = [
             "update", "timesteps", "episodes", "seeker_reward_mean", "seeker_reward_std",
             "hider_reward_mean", "hider_reward_std", "episode_length_mean",
@@ -281,74 +275,43 @@ class ZooTrainer:
             if self.seeker_zoo is not None:
                 self.seeker_zoo.add(self.policies['seeker'], update)
 
-    def act(self, obs: Dict[str, np.ndarray]) -> Tuple[Dict[str, np.ndarray], ...]:
-        """Get actions - learning policies for own role, opponents for other role."""
-        actions = {}
-        log_probs = {}
-        values = {}
+    def _act_batch(self, policy: PPOAgent, obs_batch: np.ndarray
+                   ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Get actions, log_probs, values for a batch of observations."""
+        n = obs_batch.shape[0]
+        acts = np.zeros((n, self.env.act_dim), dtype=np.float32)
+        lps = np.zeros(n, dtype=np.float32)
+        vals = np.zeros(n, dtype=np.float32)
+        for i in range(n):
+            act, lp, val = policy.act(obs_batch[i])
+            acts[i] = act
+            lps[i] = lp
+            vals[i] = val
+        return acts, lps, vals
 
-        for role in ['seeker', 'hider']:
-            # Use learning policy for this role's decisions
-            policy = self.policies[role]
-            role_obs = obs[role]
+    def _act_batch_actions_only(self, policy: PPOAgent, obs_batch: np.ndarray
+                                ) -> np.ndarray:
+        """Get actions only (for opponent, no training data needed)."""
+        n = obs_batch.shape[0]
+        acts = np.zeros((n, self.env.act_dim), dtype=np.float32)
+        for i in range(n):
+            act, _, _ = policy.act(obs_batch[i])
+            acts[i] = act
+        return acts
 
-            acts = np.zeros((self.config.num_envs, self.env.act_dim), dtype=np.float32)
-            lps = np.zeros(self.config.num_envs, dtype=np.float32)
-            vals = np.zeros(self.config.num_envs, dtype=np.float32)
+    def collect_rollout(self, buffer: RolloutBuffer, training_role: str) -> np.ndarray:
+        """Collect rollout for a specific role.
 
-            for i in range(self.config.num_envs):
-                act, lp, val = policy.act(role_obs[i])
-                acts[i] = act
-                lps[i] = lp
-                vals[i] = val
+        The training_role uses its learning policy (data collected for PPO).
+        The opponent uses a sampled policy from the zoo (or latest).
 
-            actions[role] = acts
-            log_probs[role] = lps
-            values[role] = vals
+        Returns last_values for GAE computation.
+        """
+        opponent_role = 'hider' if training_role == 'seeker' else 'seeker'
 
-        return actions, log_probs, values
-
-    def act_with_opponents(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """Get actions using current opponents (for environment stepping)."""
-        actions = {}
-
-        for role in ['seeker', 'hider']:
-            # Seeker acts based on seeker obs, using seeker policy or opponent
-            # But when collecting data, we want the LEARNING policy's perspective
-            # The opponent is what the OTHER role sees
-
-            # For stepping the env, each role uses its current opponent assignment
-            if role == 'seeker':
-                # Seeker uses learning seeker policy
-                policy = self.policies['seeker']
-            else:
-                # Hider uses learning hider policy
-                policy = self.policies['hider']
-
-            role_obs = obs[role]
-            acts = np.zeros((self.config.num_envs, self.env.act_dim), dtype=np.float32)
-
-            for i in range(self.config.num_envs):
-                act, _, _ = policy.act(role_obs[i])
-                acts[i] = act
-
-            actions[role] = acts
-
-        return actions
-
-    def get_values(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        values = {}
-        for role in ['seeker', 'hider']:
-            vals = np.zeros(self.config.num_envs, dtype=np.float32)
-            for i in range(self.config.num_envs):
-                vals[i] = self.policies[role].value(obs[role][i])
-            values[role] = vals
-        return values
-
-    def collect_rollout(self, buffer: RolloutBuffer) -> Dict[str, Any]:
-        """Collect rollout with opponent sampling."""
-        # Sample new opponents at start of rollout
+        # Sample opponent for this rollout
         self._sample_opponents()
+        opponent_policy = self.current_opponents[opponent_role]
 
         obs = self.env.auto_reset()
         ep_rewards = {'seeker': np.zeros(self.config.num_envs),
@@ -356,11 +319,22 @@ class ZooTrainer:
         ep_lengths = np.zeros(self.config.num_envs, dtype=np.int32)
 
         while buffer.get_size() < self.config.batch_size:
-            actions, log_probs, values = self.act(obs)
-            next_obs, rewards, dones, infos = self.env.step(actions)
+            # Training role: learning policy (collect obs, action, logp, value)
+            train_acts, train_lps, train_vals = self._act_batch(
+                self.policies[training_role], obs[training_role])
 
-            buffer.add(obs, actions, rewards, dones, log_probs, values)
+            # Opponent: sampled policy (actions only for env stepping)
+            opp_acts = self._act_batch_actions_only(opponent_policy, obs[opponent_role])
 
+            # Step env with training role's own actions + opponent's actions
+            env_actions = {training_role: train_acts, opponent_role: opp_acts}
+            next_obs, rewards, dones, infos = self.env.step(env_actions)
+
+            # Store only the training role's on-policy data
+            buffer.add(obs[training_role], train_acts, rewards[training_role],
+                       dones, train_lps, train_vals)
+
+            # Track episode stats (from both roles for logging)
             for role in ['seeker', 'hider']:
                 ep_rewards[role] += rewards[role]
             ep_lengths += 1
@@ -383,27 +357,24 @@ class ZooTrainer:
 
             obs = self.env.auto_reset()
 
-        last_values = self.get_values(obs)
-        return {'last_values': last_values, 'last_obs': obs}
+        # Bootstrap value for GAE
+        last_vals = np.zeros(self.config.num_envs, dtype=np.float32)
+        for i in range(self.config.num_envs):
+            last_vals[i] = self.policies[training_role].value(obs[training_role][i])
 
-    def train_step(self, buffer: RolloutBuffer, last_values: Dict[str, np.ndarray]) -> Dict[str, Dict[str, float]]:
-        data = buffer.compute_returns_and_advantages(
-            last_values, self.config.gamma, self.config.gae_lambda
+        return last_vals
+
+    def train_step(self, role: str, buffer: RolloutBuffer,
+                   last_values: np.ndarray) -> Dict[str, float]:
+        """Run PPO update for a single role."""
+        obs, actions, log_probs_old, returns, advantages = \
+            buffer.compute_returns_and_advantages(
+                last_values, self.config.gamma, self.config.gae_lambda)
+
+        info = self.policies[role].update(
+            obs, actions, log_probs_old, returns, advantages
         )
-
-        train_info = {}
-        for role in ['seeker', 'hider']:
-            obs, actions, log_probs_old, returns, advantages = data[role]
-            adv_mean = np.mean(advantages)
-            adv_std = np.std(advantages) + 1e-8
-            advantages = (advantages - adv_mean) / adv_std
-
-            info = self.policies[role].update(
-                obs, actions, log_probs_old, returns, advantages
-            )
-            train_info[role] = info
-
-        return train_info
+        return info
 
     def _log_metrics(self, update: int, timesteps: int, train_info: Dict[str, Any],
                      fps: float, time_elapsed: float):
@@ -479,6 +450,85 @@ class ZooTrainer:
 
         print(f"\nPolicies saved to {self.output_dir}")
 
+    def resume_from(self, resume_dir: str):
+        """Resume training from an existing run directory."""
+        # Remove the empty directory created by __init__
+        init_dir = self.output_dir
+        if os.path.isdir(init_dir) and init_dir != os.path.abspath(resume_dir):
+            import shutil
+            shutil.rmtree(init_dir, ignore_errors=True)
+
+        resume_dir = os.path.abspath(resume_dir)
+        if not os.path.isdir(resume_dir):
+            raise FileNotFoundError(f"Resume directory not found: {resume_dir}")
+
+        # Find latest checkpoint update number
+        ckpt_dir = os.path.join(resume_dir, "checkpoints")
+        if not os.path.isdir(ckpt_dir):
+            raise FileNotFoundError(f"No checkpoints directory in: {resume_dir}")
+
+        updates = set()
+        for fname in os.listdir(ckpt_dir):
+            if fname.endswith(".pt"):
+                # e.g. hider_00500.pt -> 500
+                try:
+                    num = int(fname.split("_")[1].split(".")[0])
+                    updates.add(num)
+                except (IndexError, ValueError):
+                    continue
+
+        if not updates:
+            raise FileNotFoundError(f"No checkpoints found in: {ckpt_dir}")
+
+        latest_update = max(updates)
+
+        # Load policies
+        for role in ['seeker', 'hider']:
+            path = os.path.join(ckpt_dir, f"{role}_{latest_update:05d}.pt")
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Missing checkpoint: {path}")
+            self.policies[role].load_policy(path)
+            print(f"  Loaded {role} from {path}")
+
+        # Read metrics.csv to get last timesteps/episodes
+        metrics_path = os.path.join(resume_dir, "metrics.csv")
+        last_timesteps = 0
+        last_episodes = 0
+        if os.path.exists(metrics_path):
+            with open(metrics_path, "r") as f:
+                reader = csv.reader(f)
+                header = next(reader)
+                for row in reader:
+                    if row:
+                        last_timesteps = int(float(row[1]))
+                        last_episodes = int(float(row[2]))
+
+        self._resume_update = latest_update
+        self._resume_timesteps = last_timesteps
+        self.total_episodes = last_episodes
+
+        # Switch output to the existing run directory
+        self.output_dir = resume_dir
+        self.metrics_path = os.path.join(resume_dir, "metrics.csv")
+        self._init_metrics_csv(append=True)
+
+        # Rebuild zoo from saved checkpoints
+        for upd in sorted(updates):
+            hider_path = os.path.join(ckpt_dir, f"hider_{upd:05d}.pt")
+            if os.path.exists(hider_path):
+                agent = PPOAgent(self.hider_zoo.ppo_cfg)
+                agent.load_policy(hider_path)
+                self.hider_zoo.add(agent, upd)
+            if self.seeker_zoo is not None:
+                seeker_path = os.path.join(ckpt_dir, f"seeker_{upd:05d}.pt")
+                if os.path.exists(seeker_path):
+                    agent = PPOAgent(self.seeker_zoo.ppo_cfg)
+                    agent.load_policy(seeker_path)
+                    self.seeker_zoo.add(agent, upd)
+
+        print(f"\nResuming from update {latest_update}, timesteps {last_timesteps}")
+        print(f"  Zoo sizes: hider={len(self.hider_zoo)}, seeker={len(self.seeker_zoo) if self.seeker_zoo else 0}")
+
     def train(self):
         print(f"Starting zoo training: {self.config.total_timesteps} timesteps")
         print(f"  Latest opponent prob (A): {self.config.latest_opponent_prob}")
@@ -487,30 +537,36 @@ class ZooTrainer:
         print(f"  Output: {self.output_dir}\n")
 
         buffer = RolloutBuffer(
-            buffer_size=self.config.batch_size // self.config.num_envs + 1,
             obs_dim=self.env.obs_dim,
             act_dim=self.env.act_dim,
             num_envs=self.config.num_envs,
         )
 
-        timesteps = 0
-        update = 0
+        timesteps = self._resume_timesteps
+        update = self._resume_update
         start_time = time.time()
 
         while timesteps < self.config.total_timesteps:
-            buffer.clear()
-            rollout_info = self.collect_rollout(buffer)
-            timesteps += buffer.get_size()
-            update += 1
+            train_info = {}
 
-            train_info = self.train_step(buffer, rollout_info['last_values'])
+            # Two-phase update: each role gets its own rollout against
+            # a (possibly zoo-sampled) opponent, ensuring on-policy data
+            for role in ['seeker', 'hider']:
+                buffer.clear()
+                last_values = self.collect_rollout(buffer, training_role=role)
+                timesteps += buffer.get_size()
+                info = self.train_step(role, buffer, last_values)
+                train_info[role] = info
+
+            update += 1
 
             # Update zoos with current policies
             self._update_zoos(update)
 
             if update % self.config.log_interval == 0:
                 elapsed = time.time() - start_time
-                fps = timesteps / elapsed
+                new_steps = timesteps - self._resume_timesteps
+                fps = new_steps / elapsed if elapsed > 0 else 0
 
                 self._log_metrics(update, timesteps, train_info, fps, elapsed)
 
@@ -527,7 +583,8 @@ class ZooTrainer:
                 self.save_checkpoint(update)
 
         elapsed = time.time() - start_time
-        fps = timesteps / elapsed if elapsed > 0 else 0
+        new_steps = timesteps - self._resume_timesteps
+        fps = new_steps / elapsed if elapsed > 0 else 0
         self._log_metrics(update, timesteps, train_info, fps, elapsed)
 
         self.save_final()
@@ -561,8 +618,16 @@ def main():
                         default="experiments/results/zoo_training",
                         help="Output directory")
     parser.add_argument("--layout", type=str, default="four_corners",
-                        choices=["empty", "four_corners", "central_cross"],
+                        choices=["empty", "four_corners", "central_cross", "playground"],
                         help="Arena layout")
+    parser.add_argument("--enable-sprint", action="store_true",
+                        help="Enable stamina/sprint system")
+    parser.add_argument("--hider-speed-mult", type=float, default=1.0,
+                        help="Hider base speed multiplier (e.g. 1.1 for 10%% advantage)")
+    parser.add_argument("--sprint-speed-mult", type=float, default=1.5,
+                        help="Max speed multiplier when sprinting")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from an existing run directory (the timestamped subdir)")
 
     args = parser.parse_args()
 
@@ -578,8 +643,17 @@ def main():
         output_dir=args.output_dir,
     )
 
-    env_config = TagEnvConfig(layout=args.layout)
+    env_config = TagEnvConfig(
+        layout=args.layout,
+        enable_sprint=args.enable_sprint,
+        hider_speed_mult=args.hider_speed_mult,
+        sprint_speed_mult=args.sprint_speed_mult,
+    )
     trainer = ZooTrainer(config, env_config=env_config)
+
+    if args.resume:
+        trainer.resume_from(args.resume)
+
     trainer.train()
 
 

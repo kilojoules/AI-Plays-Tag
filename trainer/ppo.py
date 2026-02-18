@@ -63,7 +63,7 @@ class PPOAgent:
             x = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
             logits = self.pi(x)
             mean, log_std = torch.chunk(logits, 2, dim=-1)
-            log_std = torch.clamp(log_std, -4.0, 1.5)
+            log_std = torch.clamp(log_std, -2.0, 1.5)
             std = torch.exp(log_std)
             normal = torch.distributions.Normal(mean, std)
             action = torch.tanh(normal.sample())
@@ -80,7 +80,7 @@ class PPOAgent:
     def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         logits = self.pi(obs)
         mean, log_std = torch.chunk(logits, 2, dim=-1)
-        log_std = torch.clamp(log_std, -4.0, 1.5)
+        log_std = torch.clamp(log_std, -2.0, 1.5)
         std = torch.exp(log_std)
         normal = torch.distributions.Normal(mean, std)
         pre_tanh = torch.atanh(torch.clamp(actions, -0.999, 0.999))
@@ -113,14 +113,18 @@ class PPOAgent:
         logp_old_t = torch.as_tensor(logp_old, dtype=torch.float32, device=device)
         ret = torch.as_tensor(returns, dtype=torch.float32, device=device)
         adv = torch.as_tensor(advantages, dtype=torch.float32, device=device)
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
         info = {}
         for _ in range(self.cfg.train_iters):
             logp, entropy, value = self.evaluate_actions(o, a)
-            ratio = torch.exp(logp - logp_old_t)
+            log_ratio = torch.clamp(logp - logp_old_t, -20.0, 20.0)
+            ratio = torch.exp(log_ratio)
             clip_adv = torch.clamp(ratio, 1.0 - self.cfg.clip_ratio, 1.0 + self.cfg.clip_ratio) * adv
-            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean() - 0.01 * entropy.mean()
             loss_v = 0.5 * ((ret - value) ** 2).mean()
             approx_kl = (logp_old_t - logp).mean().item()
+            if not (torch.isfinite(loss_pi) and torch.isfinite(loss_v)):
+                break
             self.pi_opt.zero_grad(); loss_pi.backward()
             torch.nn.utils.clip_grad_norm_(self.pi.parameters(), max_norm=0.5)
             self.pi_opt.step()

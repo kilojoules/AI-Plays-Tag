@@ -3,10 +3,10 @@
 Run zoo training sweep experiments.
 
 Sweeps:
-- A (latest_prob): 0.05, 0.1, 0.2
+- A (latest_prob): 0.0, 0.05, 0.1, 0.2
 - Zoo mode: hider-only, both
 
-Total: 6 experiments
+Total: 8 experiments
 Runs 2 in parallel (1 slot for existing training + 1 new)
 """
 import argparse
@@ -25,13 +25,17 @@ class ExperimentConfig:
     latest_prob: float
     use_seeker_zoo: bool
     timesteps: int = 10_000_000  # Match stable training
+    layout: str = "four_corners"
+    enable_sprint: bool = False
+    hider_speed_mult: float = 1.0
+    sprint_speed_mult: float = 1.5
 
 
 def get_experiments() -> List[ExperimentConfig]:
     """Define all experiment configurations."""
     experiments = []
 
-    for A in [0.05, 0.1, 0.2]:
+    for A in [0.0, 0.05, 0.1, 0.2]:
         for use_seeker_zoo in [False, True]:
             zoo_mode = "both" if use_seeker_zoo else "hider_only"
             name = f"A{int(A*100):02d}_{zoo_mode}"
@@ -44,7 +48,22 @@ def get_experiments() -> List[ExperimentConfig]:
     return experiments
 
 
-def run_experiment(exp: ExperimentConfig, output_base: str) -> subprocess.Popen:
+def find_resume_dir(output_dir: str) -> Optional[str]:
+    """Find the latest timestamped run directory with checkpoints to resume from."""
+    output_path = Path(output_dir)
+    if not output_path.exists():
+        return None
+
+    # Find timestamped subdirectories (format: YYYYMMDD_HHMMSS)
+    candidates = sorted(output_path.glob("2*"), reverse=True)
+    for d in candidates:
+        ckpt_dir = d / "checkpoints"
+        if ckpt_dir.exists() and any(ckpt_dir.glob("*.pt")):
+            return str(d)
+    return None
+
+
+def run_experiment(exp: ExperimentConfig, output_base: str, resume: bool = False) -> subprocess.Popen:
     """Launch an experiment as a subprocess."""
     output_dir = f"{output_base}/{exp.name}"
 
@@ -54,23 +73,36 @@ def run_experiment(exp: ExperimentConfig, output_base: str) -> subprocess.Popen:
         "--timesteps", str(exp.timesteps),
         "--latest-prob", str(exp.latest_prob),
         "--output-dir", output_dir,
-        "--layout", "four_corners",
+        "--layout", exp.layout,
+        "--hider-speed-mult", str(exp.hider_speed_mult),
+        "--sprint-speed-mult", str(exp.sprint_speed_mult),
     ]
 
     if exp.use_seeker_zoo:
         cmd.append("--use-seeker-zoo")
 
-    print(f"\nLaunching: {exp.name}")
+    if exp.enable_sprint:
+        cmd.append("--enable-sprint")
+
+    # Check for resumable run
+    resume_dir = find_resume_dir(output_dir) if resume else None
+    if resume_dir:
+        cmd.extend(["--resume", resume_dir])
+
+    mode = "RESUMING" if resume_dir else "Starting fresh"
+    print(f"\nLaunching: {exp.name} ({mode})")
     print(f"  A = {exp.latest_prob} ({exp.latest_prob*100:.0f}% latest, {(1-exp.latest_prob)*100:.0f}% zoo)")
     print(f"  Seeker zoo: {exp.use_seeker_zoo}")
     print(f"  Output: {output_dir}")
+    if resume_dir:
+        print(f"  Resume from: {resume_dir}")
     print(f"  Command: {' '.join(cmd)}")
 
     # Create log file
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     log_path = Path(output_dir) / "train.log"
 
-    with open(log_path, "w") as log_file:
+    with open(log_path, "a" if resume_dir else "w") as log_file:
         proc = subprocess.Popen(
             cmd,
             stdout=log_file,
@@ -92,6 +124,8 @@ def main():
                         help="Print what would run without executing")
     parser.add_argument("--start-index", type=int, default=0,
                         help="Start from experiment index (for resuming)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from latest checkpoints in existing run dirs")
 
     args = parser.parse_args()
 
@@ -125,7 +159,7 @@ def main():
         # Launch new experiments if slots available
         while len(running) < args.max_parallel and queue:
             idx, exp = queue.pop(0)
-            proc = run_experiment(exp, args.output_dir)
+            proc = run_experiment(exp, args.output_dir, resume=args.resume)
             running.append((exp, proc))
             time.sleep(2)  # Brief delay between launches
 

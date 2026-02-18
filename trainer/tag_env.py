@@ -55,6 +55,27 @@ LAYOUTS: Dict[str, Dict[str, Any]] = {
         ],
         'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
     },
+    'playground': {
+        'obstacles': [
+            # Central chokepoint: two pillars with gap between
+            Obstacle(x=-2.0, y=0.0, half_width=1.0, half_height=2.5),   # Left pillar
+            Obstacle(x=2.0, y=0.0, half_width=1.0, half_height=2.5),    # Right pillar
+            # NW L-shaped corridor
+            Obstacle(x=-8.0, y=8.0, half_width=3.0, half_height=0.75),  # Horizontal arm
+            Obstacle(x=-10.25, y=5.5, half_width=0.75, half_height=2.5), # Vertical arm
+            # SE L-shaped corridor
+            Obstacle(x=8.0, y=-8.0, half_width=3.0, half_height=0.75),  # Horizontal arm
+            Obstacle(x=10.25, y=-5.5, half_width=0.75, half_height=2.5), # Vertical arm
+            # NE dead-end pocket (risky shelter)
+            Obstacle(x=8.0, y=10.0, half_width=4.0, half_height=0.75),  # Top wall
+            Obstacle(x=5.0, y=7.5, half_width=0.75, half_height=2.5),   # Side wall (gap at bottom)
+            # SW cover block
+            Obstacle(x=-7.0, y=-5.0, half_width=1.5, half_height=1.5),
+            # East wall segment
+            Obstacle(x=10.0, y=2.0, half_width=0.75, half_height=3.0),
+        ],
+        'safe_zone': SafeZone(x=-5.0, y=5.0, radius=2.5),  # Off-center
+    },
 }
 
 
@@ -83,7 +104,16 @@ class TagEnvConfig:
     timeout_seeker_penalty: float = 6.0
 
     # Arena layout
-    layout: str = 'empty'          # Layout name: 'empty', 'four_corners', 'central_cross'
+    layout: str = 'empty'          # Layout name: 'empty', 'four_corners', 'central_cross', 'playground'
+
+    # Sprint/stamina system
+    enable_sprint: bool = False
+    sprint_speed_mult: float = 1.5       # Max speed multiplier when sprinting
+    max_stamina: float = 3.0             # Seconds of full sprint
+    stamina_regen_rate: float = 1.0      # Stamina per second when not sprinting
+
+    # Hider speed advantage
+    hider_speed_mult: float = 1.0        # Base speed multiplier for hider (1.0 = equal)
 
 
 class VecTagEnv:
@@ -128,9 +158,12 @@ class VecTagEnv:
         # Cooldown remaining (counts down when exhausted)
         self.safe_zone_cooldown = np.zeros(num_envs, dtype=np.float32)
 
-        # Observation dimension: position(2) + velocity(2) + relative(4) + roles(2) + forward(2) + rays(72) + safe_zone(3)
-        self.obs_dim = 12 + self.cfg.num_rays * 2 + 3
-        self.act_dim = 3  # move_x, move_z, jump (jump ignored in 2D)
+        # Stamina state: [num_envs, 2] - one per agent
+        self.stamina = np.full((num_envs, 2), self.cfg.max_stamina, dtype=np.float32)
+
+        # Observation dimension: position(2) + velocity(2) + relative(4) + roles(2) + forward(2) + rays(72) + safe_zone(3) + stamina(2 if sprint)
+        self.obs_dim = 12 + self.cfg.num_rays * 2 + 3 + (2 if self.cfg.enable_sprint else 0)
+        self.act_dim = 3  # move_x, move_z, sprint_intensity (3rd dim used for sprint when enabled)
 
         self.reset()
 
@@ -182,6 +215,9 @@ class VecTagEnv:
         self.safe_zone_time[env_ids] = 0.0
         self.safe_zone_exhausted[env_ids] = False
         self.safe_zone_cooldown[env_ids] = 0.0
+
+        # Reset stamina
+        self.stamina[env_ids] = self.cfg.max_stamina
 
         # Compute initial distances
         self.prev_distances[env_ids] = self._compute_distances(env_ids)
@@ -276,6 +312,13 @@ class VecTagEnv:
                     role_obs[eid, obs_idx + 2] = self.safe_zone_cooldown[eid] / self.safe_zone.cooldown_duration
                 else:
                     role_obs[eid, obs_idx:obs_idx + 3] = 0.0
+                obs_idx += 3
+
+                # Stamina observations (2 values: own stamina, opponent stamina)
+                if self.cfg.enable_sprint:
+                    role_obs[eid, obs_idx] = self.stamina[eid, agent_idx] / self.cfg.max_stamina
+                    role_obs[eid, obs_idx + 1] = self.stamina[eid, other_idx] / self.cfg.max_stamina
+                    obs_idx += 2
 
             obs[role] = role_obs
 
@@ -438,6 +481,41 @@ class VecTagEnv:
             agent_actions[eid, seeker_idx] = seeker_actions[eid]
             agent_actions[eid, hider_idx] = hider_actions[eid]
 
+        # Compute effective max speed for each agent [num_envs, 2]
+        effective_speed = np.full((self.num_envs, 2), self.cfg.agent_speed, dtype=np.float32)
+
+        # Hider speed advantage
+        if self.cfg.hider_speed_mult != 1.0:
+            for eid in range(self.num_envs):
+                hider_idx = 1 - self.seeker_idx[eid]
+                effective_speed[eid, hider_idx] *= self.cfg.hider_speed_mult
+
+        # Sprint system
+        if self.cfg.enable_sprint:
+            action_dt = self.cfg.dt * self.cfg.steps_per_action
+            for eid in range(self.num_envs):
+                for agent_idx in range(2):
+                    # Map agent_idx to role to get correct action
+                    if agent_idx == self.seeker_idx[eid]:
+                        sprint_raw = seeker_actions[eid, 2]
+                    else:
+                        sprint_raw = hider_actions[eid, 2]
+                    # Sprint intensity in [0, 1] (tanh output mapped)
+                    sprint_intensity = np.clip((sprint_raw + 1.0) * 0.5, 0.0, 1.0)
+
+                    if self.stamina[eid, agent_idx] > 0 and sprint_intensity > 0.1:
+                        # Apply sprint speed boost: lerp between 1.0 and sprint_speed_mult
+                        speed_mult = 1.0 + (self.cfg.sprint_speed_mult - 1.0) * sprint_intensity
+                        effective_speed[eid, agent_idx] *= speed_mult
+                        # Drain stamina proportional to sprint intensity
+                        self.stamina[eid, agent_idx] -= sprint_intensity * action_dt
+                        self.stamina[eid, agent_idx] = max(0.0, self.stamina[eid, agent_idx])
+                    else:
+                        # Regen stamina when not sprinting
+                        self.stamina[eid, agent_idx] += self.cfg.stamina_regen_rate * action_dt
+                        self.stamina[eid, agent_idx] = min(
+                            self.cfg.max_stamina, self.stamina[eid, agent_idx])
+
         # Simulate physics for multiple substeps
         dt = self.cfg.dt
         for _ in range(self.cfg.steps_per_action):
@@ -445,17 +523,20 @@ class VecTagEnv:
                 # Get move inputs (clamped to [-1, 1])
                 move_input = np.clip(agent_actions[:, agent_idx, :2], -1, 1)
 
+                # Per-env max speed for this agent
+                max_speed = effective_speed[:, agent_idx]
+
                 # Apply acceleration
-                target_vel = move_input * self.cfg.agent_speed
+                target_vel = move_input * max_speed[:, np.newaxis]
                 accel = (target_vel - self.velocities[:, agent_idx]) * self.cfg.agent_accel * dt
                 self.velocities[:, agent_idx] += accel
 
-                # Clamp velocity
+                # Clamp velocity to per-env max speed
                 speed = np.linalg.norm(self.velocities[:, agent_idx], axis=1, keepdims=True)
                 speed = np.maximum(speed, 1e-6)
                 self.velocities[:, agent_idx] = np.where(
-                    speed > self.cfg.agent_speed,
-                    self.velocities[:, agent_idx] / speed * self.cfg.agent_speed,
+                    speed > max_speed[:, np.newaxis],
+                    self.velocities[:, agent_idx] / speed * max_speed[:, np.newaxis],
                     self.velocities[:, agent_idx]
                 )
 
@@ -661,6 +742,7 @@ class SingleTagEnv:
             'safe_zone_time': float(self.vec_env.safe_zone_time[0]),
             'safe_zone_exhausted': bool(self.vec_env.safe_zone_exhausted[0]),
             'safe_zone_cooldown': float(self.vec_env.safe_zone_cooldown[0]),
+            'stamina': self.vec_env.stamina[0].copy(),
         }
         return state
 
