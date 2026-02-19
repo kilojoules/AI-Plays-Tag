@@ -29,9 +29,10 @@ class ExperimentConfig:
     enable_sprint: bool = False
     hider_speed_mult: float = 1.0
     sprint_speed_mult: float = 1.5
+    algorithm: str = "ppo"  # "ppo" or "sac"
 
 
-def get_experiments() -> List[ExperimentConfig]:
+def get_experiments(algorithm: str = "ppo") -> List[ExperimentConfig]:
     """Define all experiment configurations."""
     experiments = []
 
@@ -43,6 +44,7 @@ def get_experiments() -> List[ExperimentConfig]:
                 name=name,
                 latest_prob=A,
                 use_seeker_zoo=use_seeker_zoo,
+                algorithm=algorithm,
             ))
 
     return experiments
@@ -67,9 +69,15 @@ def run_experiment(exp: ExperimentConfig, output_base: str, resume: bool = False
     """Launch an experiment as a subprocess."""
     output_dir = f"{output_base}/{exp.name}"
 
+    # Select training script based on algorithm
+    if exp.algorithm == "sac":
+        train_script = "trainer/train_zoo_sac.py"
+    else:
+        train_script = "trainer/train_zoo.py"
+
     cmd = [
         sys.executable,
-        "trainer/train_zoo.py",
+        train_script,
         "--timesteps", str(exp.timesteps),
         "--latest-prob", str(exp.latest_prob),
         "--output-dir", output_dir,
@@ -126,22 +134,26 @@ def main():
                         help="Start from experiment index (for resuming)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from latest checkpoints in existing run dirs")
+    parser.add_argument("--algorithm", type=str, default="ppo",
+                        choices=["ppo", "sac"],
+                        help="Training algorithm (default: ppo)")
 
     args = parser.parse_args()
 
-    experiments = get_experiments()
+    experiments = get_experiments(algorithm=args.algorithm)
 
     print("="*60)
     print("ZOO TRAINING SWEEP")
     print("="*60)
-    print(f"\nExperiments to run: {len(experiments)}")
+    print(f"\nAlgorithm: {args.algorithm.upper()}")
+    print(f"Experiments to run: {len(experiments)}")
     print(f"Max parallel: {args.max_parallel}")
     print(f"Output: {args.output_dir}")
     print()
 
     for i, exp in enumerate(experiments):
         marker = " <-- START" if i == args.start_index else ""
-        print(f"  [{i}] {exp.name}: A={exp.latest_prob}, seeker_zoo={exp.use_seeker_zoo}{marker}")
+        print(f"  [{i}] {exp.name}: A={exp.latest_prob}, seeker_zoo={exp.use_seeker_zoo}, algo={exp.algorithm}{marker}")
 
     if args.dry_run:
         print("\n[DRY RUN] Would execute above experiments")

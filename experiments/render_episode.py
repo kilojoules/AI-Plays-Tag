@@ -15,15 +15,31 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from trainer.tag_env import SingleTagEnv, TagEnvConfig, LAYOUTS
 from trainer.ppo import PPOAgent, PPOConfig
+from trainer.sac import SACAgent, SACConfig
 
 
 def load_policy(path, obs_dim, act_dim):
-    cfg = PPOConfig(obs_dim=obs_dim, act_dim=act_dim)
-    policy = PPOAgent(cfg)
-    ckpt = torch.load(path, map_location='cpu', weights_only=True)
-    policy.pi.load_state_dict(ckpt["pi"])
-    policy.vf.load_state_dict(ckpt["vf"])
-    return policy
+    """Auto-detect checkpoint type (SAC or PPO) and load accordingly."""
+    ckpt = torch.load(path, map_location='cpu', weights_only=False)
+    if isinstance(ckpt, dict) and ckpt.get('type') == 'sac':
+        hidden_dim = ckpt.get('config', {}).get('hidden_dim', 256)
+        cfg = SACConfig(obs_dim=obs_dim, act_dim=act_dim, hidden_dim=hidden_dim)
+        policy = SACAgent(cfg)
+        policy.actor.load_state_dict(ckpt['actor'])
+        policy.critic.load_state_dict(ckpt['critic'])
+        policy.critic_target.load_state_dict(ckpt['critic_target'])
+        return policy
+    else:
+        # PPO checkpoint (default)
+        cfg = PPOConfig(obs_dim=obs_dim, act_dim=act_dim)
+        policy = PPOAgent(cfg)
+        if isinstance(ckpt, dict) and 'pi' in ckpt:
+            policy.pi.load_state_dict(ckpt["pi"])
+            if 'vf' in ckpt:
+                policy.vf.load_state_dict(ckpt["vf"])
+        else:
+            policy.pi.load_state_dict(ckpt)
+        return policy
 
 
 def run_episode(seeker, hider, env_config, max_steps=200):
