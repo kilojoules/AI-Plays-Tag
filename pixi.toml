@@ -60,3 +60,4 @@ exp-crossplay = "python experiments/cross_evaluate.py"
 [dependencies]
 pytorch = ">=2.10.0,<3"
 pandas = ">=3.0.0,<4"
+ffmpeg = ">=8.0.0,<9"
