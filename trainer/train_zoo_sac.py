@@ -519,7 +519,7 @@ class SACZooTrainer:
 
     def train(self):
         print(f"Starting SAC zoo training: {self.config.total_timesteps} timesteps")
-        print(f"  Latest opponent prob (A): {self.config.latest_opponent_prob}")
+        print(f"  A (zoo prob): {1 - self.config.latest_opponent_prob:.2f} (latest_prob={self.config.latest_opponent_prob})")
         print(f"  Use seeker zoo: {self.config.use_seeker_zoo}")
         print(f"  Hidden dim: {self.config.hidden_dim}")
         print(f"  Buffer size: {self.config.buffer_size}")
@@ -634,7 +634,7 @@ def main():
     parser.add_argument("--updates-per-step", type=int, default=1,
                         help="Gradient steps per env step")
     parser.add_argument("--latest-prob", "-A", type=float, default=0.1,
-                        help="Probability of using latest opponent (A)")
+                        help="Probability of using latest opponent (1-A; legacy naming)")
     parser.add_argument("--use-seeker-zoo", action="store_true",
                         help="Also maintain a seeker zoo")
     parser.add_argument("--zoo-interval", type=int, default=50,

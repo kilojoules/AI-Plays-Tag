@@ -53,7 +53,7 @@ class ZooTrainConfig:
     target_kl: float = 0.02
 
     # Zoo parameters
-    latest_opponent_prob: float = 0.1  # A = probability of latest opponent
+    latest_opponent_prob: float = 0.1  # 1-A: probability of latest opponent (A = zoo prob)
     use_seeker_zoo: bool = False       # Whether to use seeker zoo too
     zoo_update_interval: int = 50      # Add to zoo every N updates
     zoo_max_size: int = 50             # Max checkpoints in zoo
@@ -531,7 +531,7 @@ class ZooTrainer:
 
     def train(self):
         print(f"Starting zoo training: {self.config.total_timesteps} timesteps")
-        print(f"  Latest opponent prob (A): {self.config.latest_opponent_prob}")
+        print(f"  A (zoo prob): {1 - self.config.latest_opponent_prob:.2f} (latest_prob={self.config.latest_opponent_prob})")
         print(f"  Use seeker zoo: {self.config.use_seeker_zoo}")
         print(f"  Zoo update interval: {self.config.zoo_update_interval}")
         print(f"  Output: {self.output_dir}\n")
@@ -607,7 +607,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4,
                         help="Learning rate")
     parser.add_argument("--latest-prob", "-A", type=float, default=0.1,
-                        help="Probability of using latest opponent (A)")
+                        help="Probability of using latest opponent (1-A; legacy naming)")
     parser.add_argument("--use-seeker-zoo", action="store_true",
                         help="Also maintain a seeker zoo")
     parser.add_argument("--zoo-interval", type=int, default=50,

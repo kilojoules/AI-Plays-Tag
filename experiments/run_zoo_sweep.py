@@ -99,7 +99,7 @@ def run_experiment(exp: ExperimentConfig, output_base: str, resume: bool = False
 
     mode = "RESUMING" if resume_dir else "Starting fresh"
     print(f"\nLaunching: {exp.name} ({mode})")
-    print(f"  A = {exp.latest_prob} ({exp.latest_prob*100:.0f}% latest, {(1-exp.latest_prob)*100:.0f}% zoo)")
+    print(f"  A = {1-exp.latest_prob:.2f} ({(1-exp.latest_prob)*100:.0f}% zoo, {exp.latest_prob*100:.0f}% latest) [--latest-prob={exp.latest_prob}]")
     print(f"  Seeker zoo: {exp.use_seeker_zoo}")
     print(f"  Output: {output_dir}")
     if resume_dir:
