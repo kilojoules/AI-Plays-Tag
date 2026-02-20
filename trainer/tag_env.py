@@ -128,6 +128,24 @@ class VecTagEnv:
         self.obstacles: List[Obstacle] = layout_data['obstacles']
         self.safe_zone: Optional[SafeZone] = layout_data['safe_zone']
 
+        # Pre-computed obstacle arrays
+        self._num_obstacles = len(self.obstacles)
+        if self._num_obstacles > 0:
+            self._obs_centers = np.array(
+                [[o.x, o.y] for o in self.obstacles], dtype=np.float32)  # [O, 2]
+            self._obs_half_sizes = np.array(
+                [[o.half_width, o.half_height] for o in self.obstacles], dtype=np.float32)  # [O, 2]
+            self._obs_min = self._obs_centers - self._obs_half_sizes  # [O, 2]
+            self._obs_max = self._obs_centers + self._obs_half_sizes  # [O, 2]
+
+        # Pre-computed ray angle offsets
+        half_fov = np.radians(self.cfg.ray_fov / 2)
+        self._ray_offsets = np.linspace(
+            -half_fov, half_fov, self.cfg.num_rays).astype(np.float32)  # [R]
+
+        # Env index array (reused frequently)
+        self._eids = np.arange(num_envs)
+
         # State arrays for all environments
         # Positions: [num_envs, 2, 2] - (env, agent, xy)
         self.positions = np.zeros((num_envs, 2, 2), dtype=np.float32)
@@ -221,15 +239,14 @@ class VecTagEnv:
 
     def _point_in_obstacle(self, pos: np.ndarray, radius: float = 0.0) -> bool:
         """Check if a point (with optional radius) overlaps any obstacle."""
-        for obs in self.obstacles:
-            # Expand obstacle by agent radius (Minkowski sum)
-            expanded_hw = obs.half_width + radius
-            expanded_hh = obs.half_height + radius
-            dx = abs(pos[0] - obs.x)
-            dy = abs(pos[1] - obs.y)
-            if dx < expanded_hw and dy < expanded_hh:
-                return True
-        return False
+        if self._num_obstacles == 0:
+            return False
+        # Vectorized check against all obstacles at once
+        dx = np.abs(pos[0] - self._obs_centers[:, 0])
+        dy = np.abs(pos[1] - self._obs_centers[:, 1])
+        expanded_hw = self._obs_half_sizes[:, 0] + radius
+        expanded_hh = self._obs_half_sizes[:, 1] + radius
+        return bool(np.any((dx < expanded_hw) & (dy < expanded_hh)))
 
     def _compute_distances(self, env_ids: Optional[np.ndarray] = None) -> np.ndarray:
         """Compute distances between agents."""
@@ -243,81 +260,87 @@ class VecTagEnv:
         """
         Get observations for both agents in all environments.
         Returns dict with 'seeker' and 'hider' observations.
+        All operations are batched across environments.
         """
+        E = self.num_envs
+        eids = self._eids
         obs = {}
 
         for role in ['seeker', 'hider']:
-            role_obs = np.zeros((self.num_envs, self.obs_dim), dtype=np.float32)
+            role_obs = np.zeros((E, self.obs_dim), dtype=np.float32)
 
-            for eid in range(self.num_envs):
-                if role == 'seeker':
-                    agent_idx = self.seeker_idx[eid]
-                    other_idx = 1 - agent_idx
-                    is_seeker = True
-                else:
-                    agent_idx = 1 - self.seeker_idx[eid]
-                    other_idx = self.seeker_idx[eid]
-                    is_seeker = False
+            if role == 'seeker':
+                agent_idx_arr = self.seeker_idx           # [E]
+                other_idx_arr = 1 - self.seeker_idx       # [E]
+            else:
+                agent_idx_arr = 1 - self.seeker_idx       # [E]
+                other_idx_arr = self.seeker_idx            # [E]
 
-                pos = self.positions[eid, agent_idx]
-                vel = self.velocities[eid, agent_idx]
-                other_pos = self.positions[eid, other_idx]
-                other_vel = self.velocities[eid, other_idx]
-                facing = self.facing[eid, agent_idx]
+            # Gather per-role data using fancy indexing: [E, 2]
+            pos = self.positions[eids, agent_idx_arr]
+            vel = self.velocities[eids, agent_idx_arr]
+            other_pos = self.positions[eids, other_idx_arr]
+            other_vel = self.velocities[eids, other_idx_arr]
+            facing = self.facing[eids, agent_idx_arr]     # [E]
 
-                # Normalized position
-                obs_idx = 0
-                role_obs[eid, obs_idx:obs_idx+2] = pos / self.cfg.arena_half
-                obs_idx += 2
+            idx = 0
+            # Normalized position
+            role_obs[:, idx:idx+2] = pos / self.cfg.arena_half
+            idx += 2
+            # Normalized velocity
+            role_obs[:, idx:idx+2] = vel / 10.0
+            idx += 2
+            # Relative opponent position
+            role_obs[:, idx:idx+2] = (other_pos - pos) / self.cfg.arena_half
+            idx += 2
+            # Relative opponent velocity
+            role_obs[:, idx:idx+2] = (other_vel - vel) / 10.0
+            idx += 2
+            # Role flags
+            if role == 'seeker':
+                role_obs[:, idx] = 1.0
+                role_obs[:, idx+1] = 0.0
+            else:
+                role_obs[:, idx] = 0.0
+                role_obs[:, idx+1] = 1.0
+            idx += 2
+            # Forward direction
+            role_obs[:, idx] = np.cos(facing)
+            role_obs[:, idx+1] = np.sin(facing)
+            idx += 2
 
-                # Normalized velocity
-                role_obs[eid, obs_idx:obs_idx+2] = vel / 10.0
-                obs_idx += 2
+            # Batched ray casting: one call per role instead of per env
+            rays = self._cast_rays_batched(agent_idx_arr, other_idx_arr)  # [E, R*2]
+            role_obs[:, idx:idx + self.cfg.num_rays * 2] = rays
+            idx += self.cfg.num_rays * 2
 
-                # Relative opponent position and velocity
-                role_obs[eid, obs_idx:obs_idx+2] = (other_pos - pos) / self.cfg.arena_half
-                obs_idx += 2
-                role_obs[eid, obs_idx:obs_idx+2] = (other_vel - vel) / 10.0
-                obs_idx += 2
+            # Safe zone state (3 values)
+            if self.safe_zone is not None:
+                hider_idx_arr = 1 - self.seeker_idx
+                hider_pos = self.positions[eids, hider_idx_arr]  # [E, 2]
+                in_zone = self._points_in_safe_zone(hider_pos)   # [E] bool
+                role_obs[:, idx] = in_zone.astype(np.float32)
+                role_obs[:, idx+1] = self.safe_zone_exhausted.astype(np.float32)
+                role_obs[:, idx+2] = self.safe_zone_cooldown / self.safe_zone.cooldown_duration
+            idx += 3
 
-                # Role flags
-                role_obs[eid, obs_idx] = 1.0 if is_seeker else 0.0
-                role_obs[eid, obs_idx + 1] = 0.0 if is_seeker else 1.0
-                obs_idx += 2
-
-                # Forward direction
-                role_obs[eid, obs_idx] = np.cos(facing)
-                role_obs[eid, obs_idx + 1] = np.sin(facing)
-                obs_idx += 2
-
-                # Ray-based vision
-                rays = self._cast_rays(eid, agent_idx)
-                role_obs[eid, obs_idx:obs_idx + self.cfg.num_rays * 2] = rays
-                obs_idx += self.cfg.num_rays * 2
-
-                # Safe zone state (3 values)
-                # Both agents observe the hider's safe zone state
-                if self.safe_zone is not None:
-                    hider_idx = 1 - self.seeker_idx[eid]
-                    hider_pos = self.positions[eid, hider_idx]
-                    in_zone = self._point_in_safe_zone(hider_pos)
-                    role_obs[eid, obs_idx] = 1.0 if in_zone else 0.0
-                    role_obs[eid, obs_idx + 1] = 1.0 if self.safe_zone_exhausted[eid] else 0.0
-                    # Normalize cooldown to [0, 1]
-                    role_obs[eid, obs_idx + 2] = self.safe_zone_cooldown[eid] / self.safe_zone.cooldown_duration
-                else:
-                    role_obs[eid, obs_idx:obs_idx + 3] = 0.0
-                obs_idx += 3
-
-                # Stamina observations (2 values: own stamina, opponent stamina)
-                if self.cfg.enable_sprint:
-                    role_obs[eid, obs_idx] = self.stamina[eid, agent_idx] / self.cfg.max_stamina
-                    role_obs[eid, obs_idx + 1] = self.stamina[eid, other_idx] / self.cfg.max_stamina
-                    obs_idx += 2
+            # Stamina observations
+            if self.cfg.enable_sprint:
+                role_obs[:, idx] = self.stamina[eids, agent_idx_arr] / self.cfg.max_stamina
+                role_obs[:, idx+1] = self.stamina[eids, other_idx_arr] / self.cfg.max_stamina
+                idx += 2
 
             obs[role] = role_obs
 
         return obs
+
+    def _points_in_safe_zone(self, positions: np.ndarray) -> np.ndarray:
+        """Check if points [E, 2] are inside the safe zone. Returns [E] bool."""
+        if self.safe_zone is None:
+            return np.zeros(len(positions), dtype=bool)
+        dx = positions[:, 0] - self.safe_zone.x
+        dy = positions[:, 1] - self.safe_zone.y
+        return (dx * dx + dy * dy) <= (self.safe_zone.radius ** 2)
 
     def _point_in_safe_zone(self, pos: np.ndarray) -> bool:
         """Check if a point is inside the safe zone."""
@@ -327,127 +350,132 @@ class VecTagEnv:
         dy = pos[1] - self.safe_zone.y
         return (dx * dx + dy * dy) <= (self.safe_zone.radius * self.safe_zone.radius)
 
-    def _cast_rays(self, eid: int, agent_idx: int) -> np.ndarray:
-        """Cast vision rays for an agent, returns [dist, hit_type] pairs.
+    def _cast_rays_batched(self, agent_idx_arr: np.ndarray,
+                           other_idx_arr: np.ndarray) -> np.ndarray:
+        """Batched ray casting for all envs at once.
 
-        hit_type: 0.0 = wall, 0.5 = obstacle, 1.0 = agent
+        Args:
+            agent_idx_arr: [E] array of agent indices (0 or 1)
+            other_idx_arr: [E] array of other agent indices (0 or 1)
+
+        Returns:
+            [E, R*2] array of interleaved (distance, hit_type) pairs.
+            hit_type: 0.0 = wall, 0.5 = obstacle, 1.0 = agent
         """
-        result = np.zeros(self.cfg.num_rays * 2, dtype=np.float32)
-
-        pos = self.positions[eid, agent_idx]
-        facing = self.facing[eid, agent_idx]
-        other_idx = 1 - agent_idx
-        other_pos = self.positions[eid, other_idx]
-
-        half_fov = np.radians(self.cfg.ray_fov / 2)
-        angles = np.linspace(-half_fov, half_fov, self.cfg.num_rays) + facing
-
-        for i, angle in enumerate(angles):
-            direction = np.array([np.cos(angle), np.sin(angle)])
-
-            # Check wall intersections
-            wall_dist = self._ray_wall_distance(pos, direction)
-
-            # Check agent intersection
-            agent_dist = self._ray_circle_distance(pos, direction, other_pos, radius=0.5)
-
-            # Check obstacle intersections
-            obstacle_dist = self.cfg.ray_max_dist
-            for obs in self.obstacles:
-                obs_dist = self._ray_aabb_distance(pos, direction, obs)
-                obstacle_dist = min(obstacle_dist, obs_dist)
-
-            # Determine closest hit and type
-            min_dist = wall_dist
-            hit_type = 0.0  # wall
-
-            if obstacle_dist < min_dist:
-                min_dist = obstacle_dist
-                hit_type = 0.5  # obstacle
-
-            if agent_dist < min_dist:
-                min_dist = agent_dist
-                hit_type = 1.0  # agent
-
-            result[i * 2] = min(min_dist / self.cfg.ray_max_dist, 1.0)
-            result[i * 2 + 1] = hit_type
-
-        return result
-
-    def _ray_aabb_distance(self, pos: np.ndarray, direction: np.ndarray, obs: Obstacle) -> float:
-        """Compute distance to axis-aligned bounding box using slab method."""
-        # Box bounds
-        box_min = np.array([obs.x - obs.half_width, obs.y - obs.half_height])
-        box_max = np.array([obs.x + obs.half_width, obs.y + obs.half_height])
-
-        # Avoid division by zero
-        inv_dir = np.where(np.abs(direction) > 1e-8, 1.0 / direction, np.sign(direction) * 1e8)
-
-        # Compute intersection distances for each slab
-        t1 = (box_min - pos) * inv_dir
-        t2 = (box_max - pos) * inv_dir
-
-        # Find the near and far intersection for each axis
-        t_min = np.minimum(t1, t2)
-        t_max = np.maximum(t1, t2)
-
-        # The ray enters the box when it has entered all slabs
-        t_enter = np.max(t_min)
-        # The ray exits the box when it exits any slab
-        t_exit = np.min(t_max)
-
-        # Check for valid intersection
-        if t_enter < t_exit and t_exit > 0:
-            # Return the entry point (or 0 if we start inside)
-            return max(t_enter, 0.0) if t_enter < self.cfg.ray_max_dist else self.cfg.ray_max_dist
-
-        return self.cfg.ray_max_dist
-
-    def _ray_wall_distance(self, pos: np.ndarray, direction: np.ndarray) -> float:
-        """Compute distance to arena wall along ray direction."""
+        E = self.num_envs
+        R = self.cfg.num_rays
+        max_dist = self.cfg.ray_max_dist
         half = self.cfg.arena_half
-        min_dist = self.cfg.ray_max_dist
+        eids = self._eids
 
-        # Check all 4 walls
-        for wall_pos, wall_normal in [
-            (half, np.array([1, 0])),   # Right wall
-            (-half, np.array([-1, 0])), # Left wall
-            (half, np.array([0, 1])),   # Top wall
-            (-half, np.array([0, -1])), # Bottom wall
-        ]:
-            # Wall is at position wall_pos along the normal axis
-            axis = 0 if wall_normal[0] != 0 else 1
-            if abs(direction[axis]) > 1e-6:
-                t = (wall_pos - pos[axis]) / direction[axis]
-                if 0 < t < min_dist:
-                    # Check if intersection is within wall bounds
-                    hit_pos = pos + direction * t
-                    other_axis = 1 - axis
-                    if abs(hit_pos[other_axis]) <= half:
-                        min_dist = t
+        # Gather positions and facing for the role
+        pos = self.positions[eids, agent_idx_arr]          # [E, 2]
+        facing = self.facing[eids, agent_idx_arr]          # [E]
+        other_pos = self.positions[eids, other_idx_arr]    # [E, 2]
 
-        return min_dist
+        # Ray angles: facing + offsets -> [E, R]
+        angles = facing[:, None] + self._ray_offsets[None, :]  # [E, R]
+        dir_x = np.cos(angles)  # [E, R]
+        dir_y = np.sin(angles)  # [E, R]
 
-    def _ray_circle_distance(self, pos: np.ndarray, direction: np.ndarray,
-                             circle_pos: np.ndarray, radius: float) -> float:
-        """Compute distance to circle along ray direction."""
-        to_circle = circle_pos - pos
-        proj = np.dot(to_circle, direction)
+        pos_x = pos[:, 0:1]  # [E, 1]
+        pos_y = pos[:, 1:2]  # [E, 1]
 
-        if proj < 0:
-            return self.cfg.ray_max_dist
+        # ---- Wall distances (4 walls) ----
+        wall_dist = np.full((E, R), max_dist, dtype=np.float32)
 
-        closest = pos + direction * proj
-        dist_to_center = np.linalg.norm(circle_pos - closest)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            # Right wall: x = +half
+            t = (half - pos_x) / dir_x       # [E, R]
+            hit_y = pos_y + dir_y * t
+            valid = (t > 0) & (t < wall_dist) & (np.abs(hit_y) <= half)
+            wall_dist = np.where(valid, t, wall_dist)
 
-        if dist_to_center > radius:
-            return self.cfg.ray_max_dist
+            # Left wall: x = -half
+            t = (-half - pos_x) / dir_x
+            hit_y = pos_y + dir_y * t
+            valid = (t > 0) & (t < wall_dist) & (np.abs(hit_y) <= half)
+            wall_dist = np.where(valid, t, wall_dist)
 
-        # Ray hits the circle
-        half_chord = np.sqrt(radius**2 - dist_to_center**2)
+            # Top wall: y = +half
+            t = (half - pos_y) / dir_y
+            hit_x = pos_x + dir_x * t
+            valid = (t > 0) & (t < wall_dist) & (np.abs(hit_x) <= half)
+            wall_dist = np.where(valid, t, wall_dist)
+
+            # Bottom wall: y = -half
+            t = (-half - pos_y) / dir_y
+            hit_x = pos_x + dir_x * t
+            valid = (t > 0) & (t < wall_dist) & (np.abs(hit_x) <= half)
+            wall_dist = np.where(valid, t, wall_dist)
+
+        # ---- Agent (circle) distance ----
+        to_circle = other_pos - pos  # [E, 2]
+        # Project onto each ray direction: dot(to_circle, dir)
+        proj = to_circle[:, 0:1] * dir_x + to_circle[:, 1:2] * dir_y  # [E, R]
+
+        # Squared distance from circle center to closest point on ray
+        tc_sq = to_circle[:, 0:1]**2 + to_circle[:, 1:2]**2  # [E, 1]
+        dist_sq = tc_sq - proj**2  # [E, R]
+
+        radius = 0.5
+        radius_sq = radius * radius
+
+        half_chord = np.sqrt(np.maximum(radius_sq - dist_sq, 0.0))
         hit_dist = proj - half_chord
 
-        return max(0, hit_dist) if hit_dist < self.cfg.ray_max_dist else self.cfg.ray_max_dist
+        agent_dist = np.where(
+            (proj > 0) & (dist_sq <= radius_sq) & (hit_dist < max_dist),
+            np.maximum(hit_dist, 0.0),
+            max_dist
+        )
+
+        # ---- Obstacle AABB distance (slab method) ----
+        if self._num_obstacles > 0:
+            # Broadcast: pos [E, 1, 1, 2] x dir [E, R, 1, 2] vs obs [1, 1, O, 2]
+            obs_min = self._obs_min[None, None, :, :]  # [1, 1, O, 2]
+            obs_max = self._obs_max[None, None, :, :]  # [1, 1, O, 2]
+
+            dirs = np.stack([dir_x, dir_y], axis=-1)[:, :, None, :]  # [E, R, 1, 2]
+            pos_exp = pos[:, None, None, :]                           # [E, 1, 1, 2]
+
+            inv_dir = np.where(
+                np.abs(dirs) > 1e-8, 1.0 / dirs, np.sign(dirs) * 1e8)
+
+            t1 = (obs_min - pos_exp) * inv_dir  # [E, R, O, 2]
+            t2 = (obs_max - pos_exp) * inv_dir  # [E, R, O, 2]
+
+            t_near = np.minimum(t1, t2)  # [E, R, O, 2]
+            t_far = np.maximum(t1, t2)   # [E, R, O, 2]
+
+            t_enter = np.max(t_near, axis=-1)  # [E, R, O]
+            t_exit = np.min(t_far, axis=-1)    # [E, R, O]
+
+            valid_hit = (t_enter < t_exit) & (t_exit > 0) & (t_enter < max_dist)
+            obs_dist_per = np.where(valid_hit, np.maximum(t_enter, 0.0), max_dist)
+
+            obstacle_dist = np.min(obs_dist_per, axis=-1)  # [E, R]
+        else:
+            obstacle_dist = np.full((E, R), max_dist, dtype=np.float32)
+
+        # ---- Combine: pick closest hit ----
+        min_dist = wall_dist
+        hit_type = np.zeros((E, R), dtype=np.float32)  # 0.0 = wall
+
+        closer_obs = obstacle_dist < min_dist
+        min_dist = np.where(closer_obs, obstacle_dist, min_dist)
+        hit_type = np.where(closer_obs, 0.5, hit_type)
+
+        closer_agent = agent_dist < min_dist
+        min_dist = np.where(closer_agent, agent_dist, min_dist)
+        hit_type = np.where(closer_agent, 1.0, hit_type)
+
+        # Normalize and interleave
+        norm_dist = np.minimum(min_dist / max_dist, 1.0)
+        result = np.empty((E, R * 2), dtype=np.float32)
+        result[:, 0::2] = norm_dist
+        result[:, 1::2] = hit_type
+        return result
 
     def step(self, actions: Dict[str, np.ndarray]) -> Tuple[Dict[str, np.ndarray],
                                                             Dict[str, np.ndarray],
@@ -467,49 +495,44 @@ class VecTagEnv:
         """
         seeker_actions = actions['seeker']
         hider_actions = actions['hider']
+        eids = self._eids
 
-        # Map role actions to agent indices
+        # Map role actions to agent indices (vectorized)
         agent_actions = np.zeros((self.num_envs, 2, 3), dtype=np.float32)
-        for eid in range(self.num_envs):
-            seeker_idx = self.seeker_idx[eid]
-            hider_idx = 1 - seeker_idx
-            agent_actions[eid, seeker_idx] = seeker_actions[eid]
-            agent_actions[eid, hider_idx] = hider_actions[eid]
+        agent_actions[eids, self.seeker_idx] = seeker_actions
+        agent_actions[eids, 1 - self.seeker_idx] = hider_actions
 
         # Compute effective max speed for each agent [num_envs, 2]
         effective_speed = np.full((self.num_envs, 2), self.cfg.agent_speed, dtype=np.float32)
 
-        # Hider speed advantage
+        # Hider speed advantage (vectorized)
         if self.cfg.hider_speed_mult != 1.0:
-            for eid in range(self.num_envs):
-                hider_idx = 1 - self.seeker_idx[eid]
-                effective_speed[eid, hider_idx] *= self.cfg.hider_speed_mult
+            effective_speed[eids, 1 - self.seeker_idx] *= self.cfg.hider_speed_mult
 
-        # Sprint system
+        # Sprint system (vectorized per agent)
         if self.cfg.enable_sprint:
             action_dt = self.cfg.dt * self.cfg.steps_per_action
-            for eid in range(self.num_envs):
-                for agent_idx in range(2):
-                    # Map agent_idx to role to get correct action
-                    if agent_idx == self.seeker_idx[eid]:
-                        sprint_raw = seeker_actions[eid, 2]
-                    else:
-                        sprint_raw = hider_actions[eid, 2]
-                    # Sprint intensity in [0, 1] (tanh output mapped)
-                    sprint_intensity = np.clip((sprint_raw + 1.0) * 0.5, 0.0, 1.0)
+            for agent_idx in range(2):
+                # Map agent_idx -> role to get correct sprint action
+                is_seeker = (self.seeker_idx == agent_idx)  # [E] bool
+                sprint_raw = np.where(is_seeker, seeker_actions[:, 2], hider_actions[:, 2])
+                sprint_intensity = np.clip((sprint_raw + 1.0) * 0.5, 0.0, 1.0)
 
-                    if self.stamina[eid, agent_idx] > 0 and sprint_intensity > 0.1:
-                        # Apply sprint speed boost: lerp between 1.0 and sprint_speed_mult
-                        speed_mult = 1.0 + (self.cfg.sprint_speed_mult - 1.0) * sprint_intensity
-                        effective_speed[eid, agent_idx] *= speed_mult
-                        # Drain stamina proportional to sprint intensity
-                        self.stamina[eid, agent_idx] -= sprint_intensity * action_dt
-                        self.stamina[eid, agent_idx] = max(0.0, self.stamina[eid, agent_idx])
-                    else:
-                        # Regen stamina when not sprinting
-                        self.stamina[eid, agent_idx] += self.cfg.stamina_regen_rate * action_dt
-                        self.stamina[eid, agent_idx] = min(
-                            self.cfg.max_stamina, self.stamina[eid, agent_idx])
+                sprinting = (self.stamina[:, agent_idx] > 0) & (sprint_intensity > 0.1)
+
+                # Speed boost for sprinters
+                speed_mult = 1.0 + (self.cfg.sprint_speed_mult - 1.0) * sprint_intensity
+                effective_speed[:, agent_idx] = np.where(
+                    sprinting,
+                    effective_speed[:, agent_idx] * speed_mult,
+                    effective_speed[:, agent_idx])
+
+                # Drain stamina for sprinters, regen for non-sprinters
+                self.stamina[:, agent_idx] = np.where(
+                    sprinting,
+                    np.maximum(0.0, self.stamina[:, agent_idx] - sprint_intensity * action_dt),
+                    np.minimum(self.cfg.max_stamina,
+                               self.stamina[:, agent_idx] + self.cfg.stamina_regen_rate * action_dt))
 
         # Simulate physics for multiple substeps
         dt = self.cfg.dt
@@ -545,7 +568,7 @@ class VecTagEnv:
                     self.cfg.arena_half - 0.5
                 )
 
-                # Obstacle collision
+                # Obstacle collision (vectorized inner loop)
                 self._resolve_obstacle_collisions(agent_idx)
 
                 # Update facing direction based on velocity
@@ -568,16 +591,13 @@ class VecTagEnv:
         # Check for tags (considering safe zone protection)
         tagged = distances < self.cfg.tag_distance
 
-        # Check safe zone protection for hider
+        # Check safe zone protection for hider (vectorized)
         if self.safe_zone is not None:
-            for eid in range(self.num_envs):
-                if tagged[eid]:
-                    hider_idx = 1 - self.seeker_idx[eid]
-                    hider_pos = self.positions[eid, hider_idx]
-                    in_zone = self._point_in_safe_zone(hider_pos)
-                    # Hider is protected if in zone AND not exhausted
-                    if in_zone and not self.safe_zone_exhausted[eid]:
-                        tagged[eid] = False
+            hider_idx_arr = 1 - self.seeker_idx
+            hider_pos = self.positions[eids, hider_idx_arr]  # [E, 2]
+            in_zone = self._points_in_safe_zone(hider_pos)
+            protected = tagged & in_zone & ~self.safe_zone_exhausted
+            tagged = tagged & ~protected
 
         # Check for timeouts
         timed_out = self.time_elapsed >= self.cfg.time_limit
@@ -628,66 +648,93 @@ class VecTagEnv:
         return obs, rewards, self.dones.copy(), infos
 
     def _resolve_obstacle_collisions(self, agent_idx: int):
-        """Push agents out of obstacles using AABB + Minkowski sum."""
+        """Push agents out of obstacles using AABB + Minkowski sum.
+
+        Outer loop over obstacles preserved (sequential push semantics),
+        inner per-env loop fully vectorized.
+        """
+        if self._num_obstacles == 0:
+            return
+
         agent_radius = 0.5
 
-        for obs in self.obstacles:
-            # Expand obstacle by agent radius
-            expanded_hw = obs.half_width + agent_radius
-            expanded_hh = obs.half_height + agent_radius
+        for o in range(self._num_obstacles):
+            cx = self._obs_centers[o, 0]
+            cy = self._obs_centers[o, 1]
+            expanded_hw = self._obs_half_sizes[o, 0] + agent_radius
+            expanded_hh = self._obs_half_sizes[o, 1] + agent_radius
 
-            for eid in range(self.num_envs):
-                pos = self.positions[eid, agent_idx]
-                dx = pos[0] - obs.x
-                dy = pos[1] - obs.y
+            # Read current positions (reflects pushes from previous obstacles)
+            px = self.positions[:, agent_idx, 0]  # [E]
+            py = self.positions[:, agent_idx, 1]  # [E]
+            dx = px - cx
+            dy = py - cy
+            abs_dx = np.abs(dx)
+            abs_dy = np.abs(dy)
 
-                # Check if agent center is inside expanded box
-                if abs(dx) < expanded_hw and abs(dy) < expanded_hh:
-                    # Determine which axis has the smallest overlap
-                    overlap_x = expanded_hw - abs(dx)
-                    overlap_y = expanded_hh - abs(dy)
+            inside = (abs_dx < expanded_hw) & (abs_dy < expanded_hh)
+            if not np.any(inside):
+                continue
 
-                    if overlap_x < overlap_y:
-                        # Push out along x axis
-                        push = overlap_x * np.sign(dx) if dx != 0 else overlap_x
-                        self.positions[eid, agent_idx, 0] += push
-                        self.velocities[eid, agent_idx, 0] = 0  # Stop velocity in collision direction
-                    else:
-                        # Push out along y axis
-                        push = overlap_y * np.sign(dy) if dy != 0 else overlap_y
-                        self.positions[eid, agent_idx, 1] += push
-                        self.velocities[eid, agent_idx, 1] = 0
+            overlap_x = expanded_hw - abs_dx
+            overlap_y = expanded_hh - abs_dy
+
+            push_x_axis = overlap_x < overlap_y
+
+            # Push along x axis
+            mask_x = inside & push_x_axis
+            if np.any(mask_x):
+                sign_dx = np.sign(dx)
+                sign_dx = np.where(sign_dx == 0, 1.0, sign_dx)
+                self.positions[mask_x, agent_idx, 0] += (overlap_x * sign_dx)[mask_x]
+                self.velocities[mask_x, agent_idx, 0] = 0
+
+            # Push along y axis
+            mask_y = inside & ~push_x_axis
+            if np.any(mask_y):
+                sign_dy = np.sign(dy)
+                sign_dy = np.where(sign_dy == 0, 1.0, sign_dy)
+                self.positions[mask_y, agent_idx, 1] += (overlap_y * sign_dy)[mask_y]
+                self.velocities[mask_y, agent_idx, 1] = 0
 
     def _update_safe_zone_state(self, dt: float):
-        """Update safe zone state for all environments."""
+        """Update safe zone state for all environments (vectorized)."""
         if self.safe_zone is None:
             return
 
-        for eid in range(self.num_envs):
-            hider_idx = 1 - self.seeker_idx[eid]
-            hider_pos = self.positions[eid, hider_idx]
-            in_zone = self._point_in_safe_zone(hider_pos)
+        eids = self._eids
+        hider_idx_arr = 1 - self.seeker_idx
+        hider_pos = self.positions[eids, hider_idx_arr]
+        in_zone = self._points_in_safe_zone(hider_pos)
 
-            if self.safe_zone_exhausted[eid]:
-                # In cooldown period - count down
-                self.safe_zone_cooldown[eid] -= dt
-                if self.safe_zone_cooldown[eid] <= 0:
-                    # Cooldown complete - reset
-                    self.safe_zone_exhausted[eid] = False
-                    self.safe_zone_cooldown[eid] = 0.0
-                    self.safe_zone_time[eid] = 0.0
-            else:
-                # Not exhausted
-                if in_zone:
-                    # Accumulate time in zone
-                    self.safe_zone_time[eid] += dt
-                    if self.safe_zone_time[eid] >= self.safe_zone.protection_duration:
-                        # Exhausted - start cooldown
-                        self.safe_zone_exhausted[eid] = True
-                        self.safe_zone_cooldown[eid] = self.safe_zone.cooldown_duration
-                else:
-                    # Left zone - reset time (but NOT exhausted state or cooldown)
-                    self.safe_zone_time[eid] = 0.0
+        # Snapshot exhausted state before modifications (important for correct semantics:
+        # an env that was exhausted at tick start only processes the cooldown branch)
+        was_exhausted = self.safe_zone_exhausted.copy()
+
+        # --- Exhausted envs: countdown cooldown ---
+        self.safe_zone_cooldown[was_exhausted] -= dt
+
+        # Those whose cooldown expired -> reset
+        reset_mask = was_exhausted & (self.safe_zone_cooldown <= 0)
+        self.safe_zone_exhausted[reset_mask] = False
+        self.safe_zone_cooldown[reset_mask] = 0.0
+        self.safe_zone_time[reset_mask] = 0.0
+
+        # --- Non-exhausted envs (those that were NOT exhausted at start of tick) ---
+        not_exhausted = ~was_exhausted
+
+        # In zone and not exhausted: accumulate time
+        accum_mask = not_exhausted & in_zone
+        self.safe_zone_time[accum_mask] += dt
+
+        # Check for newly exhausted
+        newly_exhausted = accum_mask & (self.safe_zone_time >= self.safe_zone.protection_duration)
+        self.safe_zone_exhausted[newly_exhausted] = True
+        self.safe_zone_cooldown[newly_exhausted] = self.safe_zone.cooldown_duration
+
+        # Left zone and not exhausted: reset time
+        left_zone = not_exhausted & ~in_zone
+        self.safe_zone_time[left_zone] = 0.0
 
     def auto_reset(self) -> Dict[str, np.ndarray]:
         """Reset done environments and return new observations."""
