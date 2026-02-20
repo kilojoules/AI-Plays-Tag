@@ -27,14 +27,6 @@ def candidate_trajectory_dirs() -> List[str]:
     candidates.append(_repo_default_dir())
     candidates.extend(_legacy_dirs_from_env("AI_LEGACY_TRAJECTORY_DIRS"))
 
-    # Fallback to OS-specific defaults to support pre-migration artifacts.
-    home = Path.home()
-    candidates.append(str(home / "Library" / "Application Support" / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
-    candidates.append(str(home / ".local" / "share" / "godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        candidates.append(str(Path(appdata) / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"))
-
     seen = set()
     ordered: List[str] = []
     for path in candidates:

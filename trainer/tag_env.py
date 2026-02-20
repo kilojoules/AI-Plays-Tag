@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-Fast vectorized Python-only tag environment for efficient training.
-
-This bypasses the Godot WebSocket bridge to enable rapid policy iteration.
-The environment simulates simplified 2D tag game physics matching the Godot version.
-"""
+"""Vectorized 2D tag environment for efficient RL training."""
 from __future__ import annotations
 
 import numpy as np
@@ -88,14 +83,14 @@ class TagEnvConfig:
     tag_distance: float = 1.5      # Distance threshold for tagging
     time_limit: float = 10.0       # Episode time limit in seconds
     dt: float = 1.0 / 60.0         # Physics timestep (60 Hz)
-    steps_per_action: int = 3      # Physics steps per action (matches Godot)
+    steps_per_action: int = 3      # Physics steps per action
 
     # Observation config
     num_rays: int = 36             # Number of vision rays
     ray_fov: float = 120.0         # Field of view in degrees
     ray_max_dist: float = 15.0     # Max ray distance
 
-    # Reward shaping (matches Godot rl_env.gd)
+    # Reward shaping
     distance_reward_scale: float = 0.14
     seeker_time_penalty: float = -0.005
     runner_survival_bonus: float = 0.01

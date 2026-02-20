@@ -8,19 +8,9 @@ ai_ensure_data_dirs
 DEFAULT_TRAJECTORY_DIR="$AI_TRAJECTORIES_DIR"
 DEFAULT_FRAMES_DIR="$AI_FRAMES_DIR"
 
-LEGACY_TRAJECTORY_DIRS=()
-while IFS= read -r _legacy_traj; do
-  [[ -n "$_legacy_traj" ]] && LEGACY_TRAJECTORY_DIRS+=("$_legacy_traj")
-done < <(ai_legacy_trajectory_dirs)
-
-LEGACY_FRAMES_DIRS=()
-while IFS= read -r _legacy_frame; do
-  [[ -n "$_legacy_frame" ]] && LEGACY_FRAMES_DIRS+=("$_legacy_frame")
-done < <(ai_legacy_frames_dirs)
-
 usage() {
   cat <<USAGE
-Usage: ${0##*/} [destination] [--server-log path] [--godot-log path] [--trajectory path]
+Usage: ${0##*/} [destination] [--server-log path] [--trajectory path]
 
 Without a destination argument the script creates debug/<timestamp>/ under the repo root.
 It copies available artifacts (metrics, policies, charts, logs, trajectories, metadata).
@@ -29,7 +19,6 @@ USAGE
 
 DEST=""
 SERVER_LOG=""
-GODOT_LOG=""
 TRAJECTORY_PATH=""
 FRAMES_DIR=""
 INCLUDE_FRAMES=0
@@ -51,10 +40,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --server-log)
       SERVER_LOG="${2:-}"
-      shift 2
-      ;;
-    --godot-log)
-      GODOT_LOG="${2:-}"
       shift 2
       ;;
     --trajectory)
@@ -155,21 +140,6 @@ copy_dir_if_exists() {
 if [[ -n "$SERVER_LOG" ]]; then
   copy_if_exists "$SERVER_LOG" "server.log"
 fi
-if [[ -n "$GODOT_LOG" ]]; then
-  copy_if_exists "$GODOT_LOG" "godot.log"
-  godot_dir="$(dirname "$GODOT_LOG")"
-  shopt -s nullglob
-  for extra_log in "$godot_dir"/godot_round*.log; do
-    if [[ -f "$extra_log" ]]; then
-      copy_if_exists "$extra_log" "$(basename "$extra_log")"
-    fi
-  done
-  shopt -u nullglob
-  if [[ -f "$godot_dir/self_play_rounds.csv" ]]; then
-    copy_if_exists "$godot_dir/self_play_rounds.csv" "self_play_rounds.csv"
-  fi
-fi
-
 # Trainer artifacts
 copy_if_exists "$ROOT_DIR/trainer/logs/metrics.csv" "metrics.csv"
 copy_if_exists "$ROOT_DIR/trainer/policy.pt" "policy.pt"
@@ -177,10 +147,6 @@ copy_if_exists "$ROOT_DIR/trainer/policy_seeker.pt" "policy_seeker.pt"
 copy_if_exists "$ROOT_DIR/trainer/policy_hider.pt" "policy_hider.pt"
 copy_dir_if_exists "$ROOT_DIR/trainer/charts" "charts"
 copy_dir_if_exists "$ROOT_DIR/trainer/checkpoints" "checkpoints"
-
-# Historical seeker logs (if present)
-copy_if_exists "$ROOT_DIR/trainer/seeker_server.log"
-copy_if_exists "$ROOT_DIR/trainer/seeker_godot.log"
 
 # Trajectories
 if [[ -n "$TRAJECTORY_PATH" ]]; then
@@ -196,20 +162,7 @@ else
     fi
   fi
   if [[ -z "$latest" ]]; then
-    for legacy_dir in "${LEGACY_TRAJECTORY_DIRS[@]}"; do
-      if [[ -d "$legacy_dir" ]]; then
-        searched+=("$legacy_dir")
-        latest="$(ls -t "$legacy_dir"/*.jsonl 2>/dev/null | head -n 1 || true)"
-        if [[ -n "$latest" ]]; then
-          copy_if_exists "$latest" "$(basename "$latest")"
-          echo "[collect] (legacy) copied from $legacy_dir"
-          break
-        fi
-      fi
-    done
-    if [[ -z "$latest" ]]; then
-      echo "[collect] No trajectory files found. Checked: ${searched[*]}" >&2
-    fi
+    echo "[collect] No trajectory files found. Checked: ${searched[*]}" >&2
   fi
 fi
 
@@ -220,14 +173,6 @@ if [[ "$INCLUDE_FRAMES" -eq 1 ]]; then
     selected_dir="$FRAMES_DIR"
   elif [[ -d "$DEFAULT_FRAMES_DIR" ]]; then
     selected_dir="$DEFAULT_FRAMES_DIR"
-  else
-    for legacy_dir in "${LEGACY_FRAMES_DIRS[@]}"; do
-      if [[ -d "$legacy_dir" ]]; then
-        selected_dir="$legacy_dir"
-        echo "[collect] (legacy) selecting frames from $legacy_dir"
-        break
-      fi
-    done
   fi
   if [[ -n "$selected_dir" ]]; then
     if [[ -n "$FRAMES_LIMIT" && "$FRAMES_LIMIT" -gt 0 ]]; then

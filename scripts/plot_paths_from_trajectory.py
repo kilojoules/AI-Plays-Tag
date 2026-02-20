@@ -6,22 +6,13 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 
 def repo_default_trajectory_dir() -> Path:
     project_root = Path(__file__).resolve().parents[1]
     return project_root / "data" / "trajectories"
-
-
-def legacy_trajectory_dirs() -> Iterable[Path]:
-    home = Path.home()
-    yield home / "Library" / "Application Support" / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"
-    yield home / ".local" / "share" / "godot" / "app_userdata" / "AI Tag Game" / "trajectories"
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        yield Path(appdata) / "Godot" / "app_userdata" / "AI Tag Game" / "trajectories"
 
 
 def candidate_trajectory_dirs() -> List[Path]:
@@ -36,8 +27,6 @@ def candidate_trajectory_dirs() -> List[Path]:
             entry = entry.strip()
             if entry:
                 candidates.append(Path(entry))
-    candidates.extend(list(legacy_trajectory_dirs()))
-
     seen: set[Path] = set()
     unique: List[Path] = []
     for path in candidates:

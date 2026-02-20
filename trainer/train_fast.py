@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-Efficient standalone training script for tag agents.
-
-Uses the vectorized Python environment for fast training without Godot.
-After training, use visualize_outcome.py or run evaluation in Godot to see results.
-"""
+"""Standalone training script for tag agents using the vectorized 2D environment."""
 from __future__ import annotations
 
 import argparse
@@ -352,7 +347,7 @@ class FastTrainer:
             path = os.path.join(self.output_dir, "checkpoints", f"{role}_{update:05d}.pt")
             self.policies[role].save_policy(path)
 
-        # Also save to main trainer directory for Godot compatibility
+        # Also save to main trainer directory for easy access
         base_dir = os.path.dirname(self.output_dir)
         for role in ['seeker', 'hider']:
             path = os.path.join(os.path.dirname(__file__), f"policy_{role}.pt")

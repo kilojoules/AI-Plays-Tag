@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Encode frames dumped by recorder.gd into an MP4 using ffmpeg.
+# Encode frames into an MP4 using ffmpeg.
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd)"
 source "$ROOT_DIR/scripts/lib/data_paths.sh"

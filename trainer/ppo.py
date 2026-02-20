@@ -1,7 +1,6 @@
 """
-PPO scaffolding for Phase 2 training.
+PPO implementation for tag agent training.
 - Define policy network, value network, memory buffer, and update step.
-- Real environment interactions should come from the Godot bridge.
 
 This is intentionally lightweight; integrate with PyTorch as needed.
 """

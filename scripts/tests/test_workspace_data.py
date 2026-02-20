@@ -3,7 +3,7 @@
 Sanity checks for the workspace-local data directory wiring.
 
 Ensures helper scripts see trajectories inside `data/` without
-depending on platform-specific Godot app_userdata folders.
+depending on platform-specific app_userdata folders.
 """
 
 from __future__ import annotations

@@ -47,46 +47,6 @@ if [[ "${AI_MIGRATION_BACKUP_DIR}" != /* ]]; then
 fi
 export AI_MIGRATION_BACKUP_DIR
 
-if declare -g >/dev/null 2>&1; then
-  declare -ga _AI_LEGACY_TRAJECTORY_DIRS=()
-  declare -ga _AI_LEGACY_FRAMES_DIRS=()
-else
-  declare -a _AI_LEGACY_TRAJECTORY_DIRS=()
-  declare -a _AI_LEGACY_FRAMES_DIRS=()
-fi
-_AI_LEGACY_TRAJECTORY_DIRS+=("$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/trajectories")
-_AI_LEGACY_TRAJECTORY_DIRS+=("$HOME/.local/share/godot/app_userdata/AI Tag Game/trajectories")
-_AI_LEGACY_FRAMES_DIRS+=("$HOME/Library/Application Support/Godot/app_userdata/AI Tag Game/frames")
-_AI_LEGACY_FRAMES_DIRS+=("$HOME/.local/share/godot/app_userdata/AI Tag Game/frames")
-if [[ -n "${APPDATA:-}" ]]; then
-  _AI_LEGACY_TRAJECTORY_DIRS+=("$APPDATA/Godot/app_userdata/AI Tag Game/trajectories")
-  _AI_LEGACY_FRAMES_DIRS+=("$APPDATA/Godot/app_userdata/AI Tag Game/frames")
-fi
-
-_ai_join_legacy() {
-  local joined=""
-  for dir in "$@"; do
-    if [[ -z "$dir" ]]; then
-      continue
-    fi
-    if [[ -z "$joined" ]]; then
-      joined="$dir"
-    else
-      joined="${joined}${AI_PATHSEP}$dir"
-    fi
-  done
-  printf '%s' "$joined"
-}
-
-if [[ -z "${AI_LEGACY_TRAJECTORY_DIRS:-}" ]]; then
-  AI_LEGACY_TRAJECTORY_DIRS="$(_ai_join_legacy "${_AI_LEGACY_TRAJECTORY_DIRS[@]}")"
-fi
-if [[ -z "${AI_LEGACY_FRAMES_DIRS:-}" ]]; then
-  AI_LEGACY_FRAMES_DIRS="$(_ai_join_legacy "${_AI_LEGACY_FRAMES_DIRS[@]}")"
-fi
-export AI_LEGACY_TRAJECTORY_DIRS
-export AI_LEGACY_FRAMES_DIRS
-
 ai_data_root() {
   printf '%s\n' "$AI_DATA_ROOT"
 }
@@ -109,14 +69,6 @@ AI_DATA_ROOT=$AI_DATA_ROOT
 AI_TRAJECTORIES_DIR=$AI_TRAJECTORIES_DIR
 AI_FRAMES_DIR=$AI_FRAMES_DIR
 EOF
-}
-
-ai_legacy_trajectory_dirs() {
-  printf '%s\n' "${_AI_LEGACY_TRAJECTORY_DIRS[@]}"
-}
-
-ai_legacy_frames_dirs() {
-  printf '%s\n' "${_AI_LEGACY_FRAMES_DIRS[@]}"
 }
 
 _DATA_PATHS_SH_LOADED=1

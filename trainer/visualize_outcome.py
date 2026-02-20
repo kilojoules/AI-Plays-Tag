@@ -5,8 +5,7 @@ Outcome visualization for trained tag agents.
 Generates:
 1. Agent trajectory plots showing movement patterns
 2. Win rate statistics and charts
-3. Episode replay data for Godot visualization
-4. Optional animated MP4s of gameplay
+3. Optional animated MP4s of gameplay
 """
 from __future__ import annotations
 
@@ -459,52 +458,6 @@ class OutcomeVisualizer:
         plt.close(fig)
         print(f"Animation saved: {filename}")
 
-    def export_for_godot(self, trajectory: Dict[str, Any], filename: str):
-        """Export trajectory in JSONL format for Godot replay."""
-        with open(filename, 'w') as f:
-            # Episode start
-            f.write(json.dumps({
-                'type': 'episode_start',
-                'ts': 0
-            }) + '\n')
-
-            seeker_pos = trajectory['seeker_positions']
-            hider_pos = trajectory['hider_positions']
-            timestamps = trajectory['timestamps']
-
-            for i, (sp, hp, ts) in enumerate(zip(seeker_pos, hider_pos, timestamps)):
-                # Seeker step
-                f.write(json.dumps({
-                    'type': 'step',
-                    'agent': 'Seeker',
-                    'pos': [sp[0], 0.0, sp[1]],  # Convert 2D to 3D (y=0)
-                    'is_it': True,
-                    'ts': int(ts * 1000)
-                }) + '\n')
-
-                # Hider step
-                f.write(json.dumps({
-                    'type': 'step',
-                    'agent': 'Hider',
-                    'pos': [hp[0], 0.0, hp[1]],
-                    'is_it': False,
-                    'ts': int(ts * 1000)
-                }) + '\n')
-
-            # Episode end
-            if trajectory['tagged']:
-                f.write(json.dumps({
-                    'type': 'tag',
-                    'attacker': 'Seeker',
-                    'target': 'Hider',
-                    'ts': int(timestamps[-1] * 1000)
-                }) + '\n')
-
-            f.write(json.dumps({
-                'type': 'episode_end',
-                'ts': int(timestamps[-1] * 1000)
-            }) + '\n')
-
     def visualize(self, num_episodes: int = 50, create_anim: bool = False):
         """Run full visualization pipeline."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -538,7 +491,6 @@ class OutcomeVisualizer:
         if tagged_trajs:
             quickest = min(tagged_trajs, key=lambda t: t['duration'])
             self.plot_trajectory(quickest, os.path.join(run_dir, "quickest_tag.png"))
-            self.export_for_godot(quickest, os.path.join(run_dir, "quickest_tag.jsonl"))
             print(f"Quickest tag episode saved")
 
             if create_anim:
@@ -547,7 +499,6 @@ class OutcomeVisualizer:
         if escaped_trajs:
             longest_escape = max(escaped_trajs, key=lambda t: t['duration'])
             self.plot_trajectory(longest_escape, os.path.join(run_dir, "best_escape.png"))
-            self.export_for_godot(longest_escape, os.path.join(run_dir, "best_escape.jsonl"))
             print(f"Best escape episode saved")
 
             if create_anim:
@@ -559,7 +510,6 @@ class OutcomeVisualizer:
             avg_dur = stats['avg_duration']
             typical = min(trajectories, key=lambda t: abs(t['duration'] - avg_dur))
             self.plot_trajectory(typical, os.path.join(run_dir, "typical_episode.png"))
-            self.export_for_godot(typical, os.path.join(run_dir, "typical_episode.jsonl"))
             print(f"Typical episode saved")
 
             if create_anim:

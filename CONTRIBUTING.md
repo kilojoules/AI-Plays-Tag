@@ -4,17 +4,16 @@ This repository is shared by multiple LLM and human collaborators. To keep the h
 
 ## Branching
 - Base your work from the latest `master`.
-- Create a focused feature branch per task, e.g. `feature/godot-obs-tests`, `docs/reward-notes`.
+- Create a focused feature branch per task, e.g. `feature/env-obs-tests`, `docs/reward-notes`.
 - For stacked work, branch off the commit that contains the prerequisite change and open PRs against that base (GitHub/GitLab supports stacked PRs).
 
 ## Commits
-- Keep commits small and self-contained. Reference the relevant TODO entry (`TODO.md`, `godot/TODO.md`, etc.) in the commit message.
+- Keep commits small and self-contained. Reference the relevant TODO entry (`TODO.md`, `trainer/TODO.md`, etc.) in the commit message.
 - Suggested prefixes: `feat`, `fix`, `chore`, `docs`, `test`.
 - Avoid including generated artifacts (charts, logs, videos, `debug/` dumps); they are ignored.
 
 ## Validation
-- Run `pixi run tests` before opening or merging a PR.
-- For training changes, run `bash scripts/train.sh live-seeker` long enough to ensure the server loop stays healthy and attach logs if issues appear.
+- For training changes, run `pixi run train-quick` to ensure the training loop stays healthy and attach logs if issues appear.
 
 ## PR Checklist
 1. Rebase on `origin/master` and resolve conflicts.

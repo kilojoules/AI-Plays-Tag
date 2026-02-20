@@ -7,7 +7,6 @@ platforms = ["osx-64", "osx-arm64", "linux-64", "win-64"]
 
 [feature.server.dependencies]
 python = "3.11.*"
-websockets = "*"
 numpy = ">=1.24,<2.0"
 matplotlib = "*"
 ffmpeg = "*"
@@ -21,18 +20,13 @@ default = { features = ["server"] }
 train = { features = ["server", "rl"] }
 
 [tasks]
-server = "python trainer/server.py"
 plot = "python trainer/plot_metrics.py"
-tests = "bash scripts/run_godot_tests.sh"
 collect-debug = "bash scripts/collect_debug_artifacts.sh"
-selfplay-train = "bash scripts/train.sh self-play"
 plot-paths = "python scripts/plot_paths_from_trajectory.py"
-eval-episode = "bash scripts/eval_episode.sh"
-migrate-user-data = "bash scripts/migrate_user_data.sh"
 monitor = "python trainer/monitor_runs.py"
 monitor-all = "python trainer/monitor_runs.py --all-runs"
 
-# Fast training (Python-only, no Godot required)
+# Training
 train = "python trainer/train_fast.py"
 train-quick = "python trainer/train_fast.py --timesteps 100000"
 train-full = "python trainer/train_fast.py --timesteps 1000000"
@@ -47,9 +41,6 @@ visualize = "python trainer/visualize_outcome.py"
 visualize-anim = "python trainer/visualize_outcome.py --animate"
 visualize-obstacles = "python trainer/visualize_outcome.py --layout four_corners"
 visualize-obstacles-anim = "python trainer/visualize_outcome.py --layout four_corners --animate"
-
-# Demo in Godot (requires Godot)
-demo = "bash scripts/demo_trained.sh"
 
 # Experiments: Self-play vs SCRO comparison
 exp-scro = "python experiments/train_scro.py"
