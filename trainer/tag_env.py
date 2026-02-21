@@ -610,7 +610,8 @@ class VecTagEnv:
 
         # Distance-based shaping
         seeker_rewards += progress * self.cfg.distance_reward_scale
-        hider_rewards -= progress * self.cfg.distance_reward_scale
+        # Hider: reward for being far (absolute distance), not for increasing distance
+        hider_rewards += (distances / self.cfg.arena_half) * 0.1
 
         # Time-based rewards
         seeker_rewards += self.cfg.seeker_time_penalty
