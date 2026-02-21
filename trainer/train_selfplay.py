@@ -338,9 +338,17 @@ def main():
                         help="Hider base speed multiplier (e.g. 1.1 for 10%% advantage)")
     parser.add_argument("--sprint-speed-mult", type=float, default=1.5,
                         help="Max speed multiplier when sprinting")
+    parser.add_argument("--seeker-time-penalty", type=float, default=-0.005,
+                        help="Per-step time penalty for seeker (default: -0.005)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducibility")
     parser.add_argument("--output-dir", type=str,
                         default="experiments/results/selfplay")
     args = parser.parse_args()
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
 
     config = SelfPlayConfig(
         num_envs=args.num_envs,
@@ -354,6 +362,7 @@ def main():
         enable_sprint=args.enable_sprint,
         hider_speed_mult=args.hider_speed_mult,
         sprint_speed_mult=args.sprint_speed_mult,
+        seeker_time_penalty=args.seeker_time_penalty,
     )
 
     trainer = SelfPlayTrainer(config, env_config=env_config)
