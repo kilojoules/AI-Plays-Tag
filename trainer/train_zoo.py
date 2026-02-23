@@ -57,6 +57,7 @@ class ZooTrainConfig:
     use_seeker_zoo: bool = False       # Whether to use seeker zoo too
     zoo_update_interval: int = 50      # Add to zoo every N updates
     zoo_max_size: int = 50             # Max checkpoints in zoo
+    sampling_strategy: str = "uniform" # "uniform", "thompson", or "thompson_loss"
 
     # Logging
     log_interval: int = 10
@@ -67,14 +68,30 @@ class ZooTrainConfig:
 
 
 class OpponentZoo:
-    """Manages a zoo of opponent checkpoints."""
+    """Manages a zoo of opponent checkpoints.
 
-    def __init__(self, obs_dim: int, act_dim: int, max_size: int = 50):
+    Supports three sampling strategies:
+    - "uniform": random selection (default)
+    - "thompson": Beta-Bernoulli Thompson Sampling — prefers opponents that
+      produce *competitive* matches (|reward| < threshold → success)
+    - "thompson_loss": loss-seeking variant — prefers opponents that *beat*
+      the agent (agent reward < -threshold → success).  This biases training
+      toward the hardest historical opponents.
+    """
+
+    def __init__(self, obs_dim: int, act_dim: int, max_size: int = 50,
+                 sampling_strategy: str = "uniform",
+                 competitiveness_threshold: float = 0.3):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.max_size = max_size
+        self.sampling_strategy = sampling_strategy
+        self.competitiveness_threshold = competitiveness_threshold
         self.checkpoints: List[Dict[str, Any]] = []  # List of state dicts
         self.ppo_cfg = PPOConfig(obs_dim=obs_dim, act_dim=act_dim)
+        # Thompson Sampling posteriors: Beta(alpha, beta) per checkpoint
+        self.alphas: List[float] = []
+        self.betas: List[float] = []
 
     def add(self, policy: PPOAgent, update: int):
         """Add a checkpoint to the zoo."""
@@ -84,21 +101,56 @@ class OpponentZoo:
             'update': update,
         }
         self.checkpoints.append(state)
+        self.alphas.append(1.0)
+        self.betas.append(1.0)
 
         # Remove oldest if over capacity
         if len(self.checkpoints) > self.max_size:
             self.checkpoints.pop(0)
+            self.alphas.pop(0)
+            self.betas.pop(0)
 
-    def sample(self) -> PPOAgent:
-        """Sample a random opponent from the zoo."""
+    def sample(self) -> Tuple[PPOAgent, int]:
+        """Sample an opponent from the zoo.
+
+        Returns (agent, index) so the caller can later call update_outcome().
+        """
         if not self.checkpoints:
             raise ValueError("Zoo is empty!")
 
-        state = random.choice(self.checkpoints)
+        if self.sampling_strategy in ("thompson", "thompson_loss") and len(self.checkpoints) > 1:
+            thetas = [np.random.beta(a, b) for a, b in zip(self.alphas, self.betas)]
+            idx = int(np.argmax(thetas))
+        else:
+            idx = random.randrange(len(self.checkpoints))
+
+        state = self.checkpoints[idx]
         agent = PPOAgent(self.ppo_cfg)
         agent.pi.load_state_dict(state['pi'])
         agent.vf.load_state_dict(state['vf'])
-        return agent
+        return agent, idx
+
+    def update_outcome(self, idx: int, agent_mean_reward: float):
+        """Update Beta posterior for checkpoint idx after a rollout.
+
+        "thompson": competitive match (|reward| < threshold) counts as success.
+        "thompson_loss": agent *losing* (reward < -threshold) counts as success,
+            biasing selection toward opponents that beat the agent.
+        """
+        if idx < 0 or idx >= len(self.checkpoints):
+            return
+        if self.sampling_strategy == "thompson_loss":
+            # Success = the opponent beat the agent
+            if agent_mean_reward < -self.competitiveness_threshold:
+                self.alphas[idx] += 1.0
+            else:
+                self.betas[idx] += 1.0
+        elif self.sampling_strategy == "thompson":
+            # Success = competitive match
+            if abs(agent_mean_reward) < self.competitiveness_threshold:
+                self.alphas[idx] += 1.0
+            else:
+                self.betas[idx] += 1.0
 
     def __len__(self):
         return len(self.checkpoints)
@@ -200,8 +252,14 @@ class ZooTrainer:
         }
 
         # Opponent zoos
-        self.hider_zoo = OpponentZoo(self.env.obs_dim, self.env.act_dim, config.zoo_max_size)
-        self.seeker_zoo = OpponentZoo(self.env.obs_dim, self.env.act_dim, config.zoo_max_size) if config.use_seeker_zoo else None
+        self.hider_zoo = OpponentZoo(
+            self.env.obs_dim, self.env.act_dim, config.zoo_max_size,
+            sampling_strategy=config.sampling_strategy,
+        )
+        self.seeker_zoo = OpponentZoo(
+            self.env.obs_dim, self.env.act_dim, config.zoo_max_size,
+            sampling_strategy=config.sampling_strategy,
+        ) if config.use_seeker_zoo else None
 
         # Current opponents (may be from zoo or latest)
         self.current_opponents = {
@@ -248,10 +306,18 @@ class ZooTrainer:
             writer.writerow(columns)
 
     def _sample_opponents(self):
-        """Sample opponents for this rollout."""
+        """Sample opponents for this rollout.
+
+        Returns dict of zoo indices for sampled opponents (for Thompson update).
+        Index is -1 when the latest policy was used instead of the zoo.
+        """
+        zoo_indices = {'hider': -1, 'seeker': -1}
+
         # Sample hider opponent (for seeker to play against)
         if len(self.hider_zoo) > 0 and random.random() > self.config.latest_opponent_prob:
-            self.current_opponents['hider'] = self.hider_zoo.sample()
+            agent, idx = self.hider_zoo.sample()
+            self.current_opponents['hider'] = agent
+            zoo_indices['hider'] = idx
             self.zoo_samples['hider'] += 1
         else:
             self.current_opponents['hider'] = self.policies['hider']
@@ -260,13 +326,17 @@ class ZooTrainer:
         # Sample seeker opponent (for hider to play against) if using seeker zoo
         if self.seeker_zoo is not None:
             if len(self.seeker_zoo) > 0 and random.random() > self.config.latest_opponent_prob:
-                self.current_opponents['seeker'] = self.seeker_zoo.sample()
+                agent, idx = self.seeker_zoo.sample()
+                self.current_opponents['seeker'] = agent
+                zoo_indices['seeker'] = idx
                 self.zoo_samples['seeker'] += 1
             else:
                 self.current_opponents['seeker'] = self.policies['seeker']
                 self.latest_samples['seeker'] += 1
         else:
             self.current_opponents['seeker'] = self.policies['seeker']
+
+        return zoo_indices
 
     def _update_zoos(self, update: int):
         """Add current policies to zoos."""
@@ -310,7 +380,7 @@ class ZooTrainer:
         opponent_role = 'hider' if training_role == 'seeker' else 'seeker'
 
         # Sample opponent for this rollout
-        self._sample_opponents()
+        zoo_indices = self._sample_opponents()
         opponent_policy = self.current_opponents[opponent_role]
 
         obs = self.env.auto_reset()
@@ -356,6 +426,16 @@ class ZooTrainer:
                 ep_lengths[eid] = 0
 
             obs = self.env.auto_reset()
+
+        # Update Thompson posteriors if a zoo opponent was used
+        opp_zoo_idx = zoo_indices[opponent_role]
+        if opp_zoo_idx >= 0:
+            # Mean reward of the training role during this rollout
+            role_rewards = buffer.rewards_list  # list of (num_envs,) arrays
+            mean_reward = float(np.mean([r.mean() for r in role_rewards]))
+            opp_zoo = self.hider_zoo if opponent_role == 'hider' else self.seeker_zoo
+            if opp_zoo is not None:
+                opp_zoo.update_outcome(opp_zoo_idx, mean_reward)
 
         # Bootstrap value for GAE
         last_vals = np.zeros(self.config.num_envs, dtype=np.float32)
@@ -435,6 +515,7 @@ class ZooTrainer:
                 'use_seeker_zoo': self.config.use_seeker_zoo,
                 'zoo_update_interval': self.config.zoo_update_interval,
                 'zoo_max_size': self.config.zoo_max_size,
+                'sampling_strategy': self.config.sampling_strategy,
                 'total_timesteps': self.config.total_timesteps,
                 'lr': self.config.lr,
             },
@@ -532,6 +613,7 @@ class ZooTrainer:
     def train(self):
         print(f"Starting zoo training: {self.config.total_timesteps} timesteps")
         print(f"  A (zoo prob): {1 - self.config.latest_opponent_prob:.2f} (latest_prob={self.config.latest_opponent_prob})")
+        print(f"  Sampling strategy: {self.config.sampling_strategy}")
         print(f"  Use seeker zoo: {self.config.use_seeker_zoo}")
         print(f"  Zoo update interval: {self.config.zoo_update_interval}")
         print(f"  Output: {self.output_dir}\n")
@@ -626,10 +708,22 @@ def main():
                         help="Hider base speed multiplier (e.g. 1.1 for 10%% advantage)")
     parser.add_argument("--sprint-speed-mult", type=float, default=1.5,
                         help="Max speed multiplier when sprinting")
+    parser.add_argument("--seeker-time-penalty", type=float, default=-0.005,
+                        help="Per-step reward penalty for seeker (default: -0.005)")
+    parser.add_argument("--sampling-strategy", type=str, default="uniform",
+                        choices=["uniform", "thompson", "thompson_loss"],
+                        help="Zoo sampling strategy (default: uniform)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducibility")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from an existing run directory (the timestamped subdir)")
 
     args = parser.parse_args()
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        random.seed(args.seed)
 
     config = ZooTrainConfig(
         num_envs=args.num_envs,
@@ -640,6 +734,7 @@ def main():
         use_seeker_zoo=args.use_seeker_zoo,
         zoo_update_interval=args.zoo_interval,
         zoo_max_size=args.zoo_max_size,
+        sampling_strategy=args.sampling_strategy,
         output_dir=args.output_dir,
     )
 
@@ -648,6 +743,7 @@ def main():
         enable_sprint=args.enable_sprint,
         hider_speed_mult=args.hider_speed_mult,
         sprint_speed_mult=args.sprint_speed_mult,
+        seeker_time_penalty=args.seeker_time_penalty,
     )
     trainer = ZooTrainer(config, env_config=env_config)
 
