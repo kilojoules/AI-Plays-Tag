@@ -1,74 +1,194 @@
-AI Tag Game (2D Python RL)
+# AI Plays Tag
 
-Overview
-- 2D reinforcement learning tag game with vectorized Python environment.
-- Self-play training where seeker and hider agents learn simultaneously.
-- Open-source stack: Python, PyTorch, numpy, matplotlib.
+**Does training against past opponents make RL agents stronger?**
 
-Structure
-- `trainer/`: RL training, vectorized 2D environment, and visualization tools.
-- `data/`: Workspace-local runtime artifacts (trajectories, frame dumps). Override with `AI_DATA_ROOT` if embedding the project elsewhere.
-- `scripts/`: Automation helpers (debug artifacts, plotting, encoding).
-- `experiments/`: Self-play vs SCRO comparison experiments.
+In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in 18 out of 20 game configurations, with the largest gains (+31 pp on average) in the hardest games.**
 
-Quick Start: Training
+<p align="center">
+  <img src="docs/header_animation.gif" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480">
+  <br>
+  <em>A zoo-trained seeker (red) chases a 15% faster hider (blue) through the four_corners arena.<br>
+  Both agents were trained with PPO against a population of past opponents (A=30%, 10M timesteps).</em>
+</p>
 
-1. Train agents (takes ~1 minute for 500K steps):
-   - `pixi run train`              # Default: 500K timesteps, 64 parallel envs
-   - `pixi run train-quick`        # Quick test: 100K timesteps
-   - `pixi run train-full`         # Full training: 1M timesteps
+## The Game
 
-2. Visualize outcomes (generates trajectory plots and statistics):
-   - `pixi run visualize`          # Run 50 eval episodes, generate charts
-   - `pixi run visualize-anim`     # Also create animated MP4s (slower)
+Two agents compete in a bounded 2D arena with obstacles:
 
-3. Train with obstacles:
-   - `pixi run train-obstacles`        # four_corners layout
-   - `pixi run train-obstacles-full`   # 1M timesteps with obstacles
+- **Seeker** (red) tries to catch the hider by closing within tagging distance
+- **Hider** (blue) tries to survive until the time limit (200 steps)
+- The arena contains rectangular obstacles that block movement and a central safe zone
 
-Output locations:
-- Trained policies: `trainer/policy_seeker.pt`, `trainer/policy_hider.pt`
-- Training logs: `trainer/logs/fast_train/<run_id>/`
-- Visualizations: `trainer/visualizations/<timestamp>/`
+Each agent observes its own position/velocity, the opponent's relative position, and **36 vision rays** that detect walls, obstacles, and the other agent. Actions are continuous 2D accelerations.
 
-The training uses self-play where both seeker and hider learn simultaneously.
+Two parameters control game difficulty:
 
-Tag Rules
-- One agent starts as "it". If the "it" agent's tag area touches another agent that is not immune, the "it" status is transferred.
-- Newly tagged agents gain short immunity to prevent immediate tag-back.
+| Parameter | Symbol | Effect |
+|---|---|---|
+| Seeker Time Penalty | **STP** | Per-step reward cost on the seeker — higher means more pressure to tag quickly |
+| Hider Speed Multiplier | **HSM** | Hider speed relative to seeker — above 1.0 means the hider is faster |
 
-Python Environment (Pixi preferred)
-- Why Pixi: pip on Python 3.13 lacks PyTorch wheels; Pixi pins a compatible Python and installs from conda-forge/pytorch channels.
-- Install Pixi (see https://pixi.sh for platform-specific install), then from repo root:
-  - `pixi run train`              # start training
-  - `pixi run -e train plot`      # render charts for the latest training run
-  - `pixi run collect-debug`      # gather logs/metrics into `debug/<timestamp>/`
-  - `pixi run monitor`            # build dashboards for the most recent run of each approach
-  - `pixi run monitor-all`        # aggregate charts across every recorded run
+We sweep 4 STP values (0.005, 0.01, 0.02, 0.05) and 5 HSM values (1.0, 1.05, 1.10, 1.15, 1.20) for **20 game configurations** ranging from easy to hard.
 
-Runtime Data Directory
-- All training/eval artifacts land inside `data/` by default:
-  - `data/trajectories/ep_*.jsonl` — evaluation traces.
-  - `data/frames/frame_*.png` — recorded frames.
-- Shell helpers (`scripts/lib/data_paths.sh`) expose the shared paths.
-- Override `AI_DATA_ROOT=/custom/path` when you need an alternate workspace.
+## The Research Question
 
-Training Monitoring
-- Every training session is grouped under `trainer/logs/runs/<approach>/<run_id>/`. The approach defaults to the training mode, and you can override it with `TRAIN_APPROACH=custom-label`.
-- Each run directory contains `metrics.csv` (per-episode stats including per-role rewards, win outcomes, and episode duration), rotating policy checkpoints, TensorBoard logs, and a `metadata.json` snapshot of environment overrides.
-- `pixi run monitor` produces refreshed dashboards (`charts/*.png`) and a `run_overview.csv` summarising the latest run per approach. `pixi run monitor-all` compares every stored run for side-by-side analysis.
-- `pixi run -e train plot` remains a quick way to generate charts for a specific run; pass `--output-dir <path>` to save them outside the run directory.
+In standard self-play, both agents train exclusively against each other's latest policy. This is efficient but fragile: the seeker can overfit to the current hider's strategy and lose the ability to beat earlier ones — a phenomenon called *catastrophic forgetting*.
 
-Reward Notes
-- Reward-shaping decisions, open questions, and tuning history live in `REWARD_NOTES.md`. Update it whenever you adjust parameters in `trainer/tag_env.py`.
+**Zoo training** offers an alternative. The seeker maintains a "zoo" of archived hider checkpoints and trains against a mixture:
 
-Debug Artifacts
-- Use `bash scripts/collect_debug_artifacts.sh [dest]` (or `pixi run collect-debug`) to bundle logs manually; pass `--server-log` to add extra files.
-- Collected bundles include `metadata.txt` with git revision, making bug triage reproducible.
-- Trainer metrics record PPO diagnostics alongside per-role rewards, win outcomes, and episode duration. Use `pixi run monitor` to regenerate reward/win-rate charts when triaging a run.
+- **A%** of rollouts: play against a randomly sampled **past hider** from the zoo
+- **(1-A)%** of rollouts: play against the **latest hider** (self-play)
 
-Open-Source Only
-- Uses only open-source tools; no proprietary dependencies.
+The central question: **does zoo training actually help, and when does it help most?**
 
-Version Control
-- A `.gitignore` is included. Initialize your repo with `git init` in the project root.
+## Key Finding: Zoo Helps Most in Hard Games
+
+<p align="center">
+  <img src="experiments/results/zoo_asweep/zoo_improvement_summary.png" alt="Zoo training helps most in hard games" width="600">
+</p>
+
+We compared the best zoo configuration (A > 5%) against a near-pure self-play baseline (A = 5%) for each of the 20 game configs:
+
+- **Zoo helped in 18/20 configs** and hurt in 0/20
+- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+31.5 pp** on average, helping in all 8 configs
+- **Medium games** (baseline 70–90%): **+11.8 pp**, helping in 9/10
+- **Easy games** (baseline > 90%): **+2.9 pp** — the seeker already wins; zoo adds little
+
+<p align="center">
+  <img src="experiments/results/zoo_asweep/zoo_improvement_by_difficulty.png" alt="Zoo improvement per config, sorted by magnitude" width="900">
+  <br>
+  <em>Win rate improvement for each game config (best zoo A vs. A=5% baseline), sorted by magnitude.<br>
+  Labels show which A% was optimal. Error bars = SE of the difference across 3 seeds.</em>
+</p>
+
+The interpretation: in hard games, pure self-play gets stuck in co-adaptation cycles where the seeker overfits to the current hider. Training against diverse past hiders breaks this cycle. In easy games, the seeker wins regardless, so diversity adds negligible benefit.
+
+## Detailed Results
+
+### Win Rate vs. Zoo Mixing Rate
+
+<p align="center">
+  <img src="experiments/results/zoo_asweep/seeker_wr_vs_A.png" alt="Seeker win rate vs A across 20 game configurations" width="900">
+  <br>
+  <em>Seeker win rate vs. A for each game config. Rows = STP, columns = HSM.<br>
+  Cyan = uniform sampling, pink = Thompson-loss sampling. Error bars = SE over 3 seeds.</em>
+</p>
+
+No single A value dominates — the optimal zoo fraction varies by game. Thompson-loss sampling (which prioritizes opponents that beat the agent) edges out uniform sampling slightly, winning in 11/20 configs.
+
+### Forgetting Regret
+
+We measure forgetting with the **Forgetting Regret (FR)** metric. For each training run, we pit every saved seeker checkpoint against every saved hider checkpoint in a round-robin gauntlet, producing a win-rate matrix. FR is the average amount the seeker has regressed from its historical peak against each hider:
+
+```
+FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
+```
+
+<p align="center">
+  <img src="experiments/results/zoo_asweep/gauntlet/fr_vs_A.png" alt="Forgetting Regret vs A" width="900">
+  <br>
+  <em>Forgetting Regret vs. A across game configs. Bootstrapped SE from 20 eval episodes per matchup.</em>
+</p>
+
+The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variable forgetting. Easy games (bottom rows) have FR near zero regardless of A. Interestingly, higher A does not consistently reduce FR — the relationship is noisy and game-dependent.
+
+## Experimental Design
+
+The full sweep covers **2,800 training runs**:
+
+```
+20 game configs  (4 STP x 5 HSM)
+ x 7 A values   (5%, 10%, 20%, 30%, 50%, 75%, 90%)
+ x 2 sampling   (uniform, thompson_loss)
+ x 10 seeds
+ = 2,800 runs @ 10M timesteps each
+```
+
+All runs use the `four_corners` arena layout. The seeker trains against a hider zoo; the hider always faces the latest seeker. When sampling from the zoo, we compare two strategies:
+
+- **Uniform**: select a past checkpoint uniformly at random
+- **Thompson-loss**: Thompson Sampling biased toward opponents that *beat* the current agent
+
+## Project Structure
+
+```
+trainer/
+  tag_env.py              Vectorized 2D tag environment (3000+ steps/sec)
+  ppo.py                  PPO agent with MLP policy/value networks
+  train_zoo.py            Zoo-based population training
+  train_selfplay.py       Pure self-play baseline
+
+experiments/
+  zoo_asweep_tasks.py     A-sweep SLURM task generator
+  zoo_asweep_gauntlet.py  Checkpoint gauntlet + forgetting regret
+  animate_zoo_sweep.py    Episode animation generator
+  checkpoint_gauntlet.py  Cross-checkpoint evaluation
+```
+
+## Quick Start
+
+### Prerequisites
+
+Install [Pixi](https://pixi.sh) (manages Python 3.11 + PyTorch + all dependencies):
+
+```bash
+pixi install
+```
+
+### Train a zoo agent
+
+```bash
+# Quick test (100K steps, ~30 seconds)
+pixi run python trainer/train_zoo.py --timesteps 100000
+
+# Full training (10M steps, ~3 hours on CPU)
+pixi run python trainer/train_zoo.py \
+  --timesteps 10000000 \
+  --latest-prob 0.7 \
+  --sampling-strategy thompson_loss \
+  --layout four_corners \
+  --output-dir runs/my_experiment
+```
+
+Key arguments:
+- `--latest-prob P`: probability of playing latest opponent (A = 1 - P)
+- `--sampling-strategy {uniform,thompson,thompson_loss}`: zoo sampling method
+- `--seeker-time-penalty`: per-step seeker penalty (e.g. -0.05)
+- `--hider-speed-mult`: hider speed relative to seeker (e.g. 1.15)
+- `--layout {empty,four_corners,central_cross,playground}`: arena layout
+
+### Train with pure self-play
+
+```bash
+pixi run python trainer/train_selfplay.py --timesteps 1000000 --layout four_corners
+```
+
+### Reproduce the full sweep (SLURM)
+
+```bash
+sbatch run_zoo_asweep.sh                    # seeds 0-2 (840 tasks)
+sbatch run_zoo_asweep_extra_seeds.sh        # seeds 3-9 batch 1 (980 tasks)
+sbatch run_zoo_asweep_extra_seeds_b2.sh     # seeds 3-9 batch 2 (980 tasks)
+sbatch run_zoo_asweep_gauntlet.sh           # forgetting regret gauntlets (280 tasks)
+```
+
+## Technical Details
+
+### Environment
+- **Arena**: 30x30 bounded area with configurable obstacle layouts
+- **Observations**: position, velocity, role flags, 36 vision rays, safe zone state
+- **Actions**: continuous 2D acceleration, clamped to [-1, 1]
+- **Vectorized**: NumPy-batched across 64 parallel environments
+
+### Training
+- **Algorithm**: PPO with clipped surrogate objective
+- **Networks**: 2-layer MLP (128 hidden, Tanh), separate policy and value heads
+- **Two-phase rollout**: each update collects on-policy data for one role; the opponent uses a sampled zoo/latest policy
+- **Hider zoo**: up to 50 archived checkpoints, updated every 50 training iterations
+
+### Metrics
+Training logs to CSV: seeker/hider rewards, win rates, episode lengths, policy/value losses, zoo sizes, and sampling rates. Forgetting regret computed via checkpoint gauntlets (20 eval episodes per matchup, 13 subsampled checkpoints).
+
+## License
+
+Open-source. Python, PyTorch, NumPy, Matplotlib.
