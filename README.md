@@ -33,6 +33,30 @@ Two parameters control game difficulty:
 
 We sweep 4 STP values (0.005, 0.01, 0.02, 0.05) and 5 HSM values (1.0, 1.05, 1.10, 1.15, 1.20) for **20 game configurations** ranging from easy to hard.
 
+## The A Parameter
+
+The **A parameter** controls how often an agent trains against historical opponents from a "zoo" of archived checkpoints versus the latest opponent:
+
+- **A = 0 (self-play)**: Always train against the latest opponent. No zoo. Use `train_selfplay.py`.
+- **A in (0, 1) (zoo training)**: Each rollout samples a past opponent from the zoo with probability A, or plays the latest opponent with probability 1 − A.
+- **A near 1**: Almost always sample from the zoo. Approaches Synthetic Self-Play (SSP).
+- **A >= 1**: Invalid / not meaningful.
+
+The command-line flag `--latest-prob` is the complement: `latest_prob = 1 − A`. This is a legacy naming convention.
+
+**Arms Race** is a separate concept (not a value of A): sequential iteration where protagonist *n* trains only against adversary *n*−1 and each generation discards all prior opponents. See [adversarial self-play for wind farm control](https://julianquick.com/ML/adversarial.html) for a comparison of Arms Race, SSP, and Self-Play topologies.
+
+### When does zoo sampling help?
+
+Zoo sampling helps when **catastrophic forgetting** is present — when past adversaries perform better against later protagonists than later adversaries do. The structural test: does Nash equilibrium coincide with the best response to weak/random opponents? If yes, zoo helps. If no, zoo hurts.
+
+| Game | Forgetting? | Zoo helps? | A* | Why |
+|------|:-----------:|:----------:|:--:|-----|
+| [RPS](https://github.com/kilojoules/RPS_RL) | Cycling (not forgetting) | Yes | 0.05–0.9 (dynamic) | Nash *is* best response to any mix; zoo breaks co-adaptation cycles |
+| [Kuhn Poker](https://github.com/kilojoules/Kuhn-Poker-RL) | Absent | No | 0 (self-play) | Best response to random is exploitative, not Nash; zoo reinforces bad habits |
+| **Tag** (this repo) | Present | **Yes** | Config-dependent | Hard games show real skill regression; zoo provides corrective curriculum |
+| [LLM Red Teaming](https://github.com/kilojoules/REDKWEEN) | Open question | Open question | Untested | Defense dominates in self-play; zoo may help adversary diversity |
+
 ## The Research Question
 
 In standard self-play, both agents train exclusively against each other's latest policy. This is efficient but fragile: the seeker can overfit to the current hider's strategy and lose the ability to beat earlier ones — a phenomenon called *catastrophic forgetting*.
@@ -227,6 +251,15 @@ pixi run python experiments/plot_zoo_hider_shaped.py  # generate all plots
 
 ### Metrics
 Training logs to CSV: seeker/hider rewards, win rates, episode lengths, policy/value losses, zoo sizes, and sampling rates. Forgetting regret computed via checkpoint gauntlets (20 eval episodes per matchup, 13 subsampled checkpoints).
+
+## Related Projects
+
+This experiment is part of a series investigating zoo sampling and gauntlet-style evaluation across different games:
+
+- **[RPS_RL](https://github.com/kilojoules/RPS_RL)** — Cheap testbed using Rock-Paper-Scissors. Zoo sampling breaks co-adaptation cycles and PPO benefits more than buffered agents, but heavy zoo degrades over time. Establishes the A-parameter hypothesis.
+- **[Kuhn-Poker-RL](https://github.com/kilojoules/Kuhn-Poker-RL)** — Negative result: every RPS finding inverts in Kuhn Poker. Zoo sampling *hurts* because the best response to weak opponents is exploitative, not Nash. Reveals the catastrophic forgetting prerequisite.
+- **[REDKWEEN](https://github.com/kilojoules/REDKWEEN)** — Automated LLM red teaming via self-play. A 1B adversary discovers real jailbreak strategies, but defense always wins in self-play. Zoo sampling for adversary diversity is an open question.
+- **[Adversarial Self-Play for Wind Farm Control](https://julianquick.com/ML/adversarial.html)** — The original motivation: comparing Arms Race, SSP, and Self-Play training topologies for robust wind farm controllers.
 
 ## License
 
