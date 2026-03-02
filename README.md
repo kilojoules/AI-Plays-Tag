@@ -5,11 +5,11 @@
 In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in 18 out of 20 game configurations, with the largest gains (+31 pp on average) in the hardest games.**
 
 <p align="center">
-  <video src="docs/best_episode.mp4" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480" autoplay loop muted playsinline></video>
+  <img src="docs/header_animation.gif" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480">
   <br>
   <em>A zoo-trained seeker (red) chases a 20% faster hider (blue) through the four_corners arena.<br>
   PPO, A=75% uniform, HSM=1.20, 10M timesteps.<br>
-  178-step chase ending in a tag — 31 direction changes, high distance variance.</em>
+  179-step chase ending in a tag — 19 direction changes, high distance variance.</em>
 </p>
 
 ## The Game
