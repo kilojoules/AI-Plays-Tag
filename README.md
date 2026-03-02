@@ -8,7 +8,8 @@ In self-play, agents often *forget* how to beat earlier strategies as they co-ad
   <img src="docs/header_animation.gif" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480">
   <br>
   <em>A zoo-trained seeker (red) chases a 15% faster hider (blue) through the four_corners arena.<br>
-  Both agents were trained with PPO against a population of past opponents (A=30%, 10M timesteps).</em>
+  Both agents were trained with PPO against a population of past opponents (A=30%, 10M timesteps).<br>
+  This episode shows 134 steps of open-field pursuit ending in a tag — 0% corner time, 93% interior play.</em>
 </p>
 
 ## The Game
