@@ -92,6 +92,16 @@ FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
 
 The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variable forgetting. Easy games (bottom rows) have FR near zero regardless of A. Interestingly, higher A does not consistently reduce FR — the relationship is noisy and game-dependent.
 
+### Optimal A vs. Forgetting Regret
+
+<p align="center">
+  <img src="experiments/results/zoo_hider_shaped/astar_vs_fr.png" alt="Optimal A* vs Forgetting Regret" width="600">
+  <br>
+  <em>Each point is one game config, plotted at its optimal zoo fraction (A*) and the corresponding forgetting regret. Color indicates baseline difficulty. Gauntlet evaluation (20 episodes per matchup), error bars = SE across 3 training seeds.</em>
+</p>
+
+The scatter shows no clear trade-off between optimal zoo mixing and forgetting — A* varies widely (5–50%) without a consistent relationship to FR. This suggests that the optimal A is driven more by the game's difficulty structure than by forgetting dynamics.
+
 ## Experimental Design
 
 The full sweep covers **600 training runs**:

@@ -301,6 +301,84 @@ def plot_fr_vs_A(fr_data):
     print(f"Saved {out}")
 
 
+# ── Plot 5: A* vs Forgetting Regret (scatter) ─────────────────────
+def plot_astar_vs_fr(wr_data, fr_data):
+    """Scatter plot of optimal A (A*) vs its forgetting regret for each config."""
+    baseline_A = 0.05
+    zoo_As = [a for a in A_VALUES if a > baseline_A]
+
+    points = []
+    for stp in STPS:
+        for hsm in HSMS:
+            cn = config_name(stp, hsm)
+            # Find A* (best A and sampling mode by win rate)
+            best_wr = -1
+            best_A = baseline_A
+            best_s = SAMPLING_MODES[0]
+            for A in A_VALUES:
+                for s in SAMPLING_MODES:
+                    key = (cn, stp, hsm, A, s)
+                    vals = wr_data.get(key, [])
+                    if vals and np.mean(vals) > best_wr:
+                        best_wr = np.mean(vals)
+                        best_A = A
+                        best_s = s
+
+            # Get FR for A*
+            fr_key = (cn, stp, hsm, best_A, best_s)
+            fr_vals = fr_data.get(fr_key, [])
+            if not fr_vals:
+                continue
+            fr_mean = np.mean(fr_vals)
+            fr_se = np.std(fr_vals, ddof=1) / np.sqrt(len(fr_vals)) if len(fr_vals) > 1 else 0
+
+            # Baseline WR for coloring
+            bl_vals = []
+            for s in SAMPLING_MODES:
+                bl_vals.extend(wr_data.get((cn, stp, hsm, baseline_A, s), []))
+            bl_wr = np.mean(bl_vals) if bl_vals else 0
+
+            points.append(dict(
+                cn=cn, A_star=best_A, fr=fr_mean, fr_se=fr_se,
+                bl_wr=bl_wr, best_wr=best_wr,
+            ))
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for p in points:
+        if p["bl_wr"] < 0.7:
+            color = "#e53935"
+        elif p["bl_wr"] < 0.9:
+            color = "#ffa726"
+        else:
+            color = "#66bb6a"
+        ax.errorbar(p["A_star"] * 100, p["fr"], yerr=p["fr_se"],
+                    marker="o", markersize=8, color=color, capsize=4,
+                    markeredgecolor="white", markeredgewidth=0.5)
+        ax.annotate(p["cn"], (p["A_star"] * 100, p["fr"]),
+                    textcoords="offset points", xytext=(6, 4),
+                    fontsize=6, alpha=0.7)
+
+    ax.set_xlabel("Optimal Zoo Fraction A* (%)", fontsize=12)
+    ax.set_ylabel("Forgetting Regret at A*", fontsize=12)
+    ax.set_title("Optimal A* vs. Forgetting Regret — Hider-Shaped", fontsize=13)
+    ax.grid(True, alpha=0.3)
+
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor="#e53935", label="Hard (baseline WR < 70%)"),
+        Patch(facecolor="#ffa726", label="Medium (70–90%)"),
+        Patch(facecolor="#66bb6a", label="Easy (> 90%)"),
+    ]
+    ax.legend(handles=legend_elements, loc="upper right", fontsize=9)
+
+    fig.tight_layout()
+    out = BASE_DIR / "astar_vs_fr.png"
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out}")
+
+
 def main():
     print("Loading gauntlet data...")
     wr_data, fr_data = load_gauntlet_data()
@@ -313,6 +391,7 @@ def main():
     plot_improvement_summary(wr_data)
     plot_improvement_by_difficulty(wr_data)
     plot_fr_vs_A(fr_data)
+    plot_astar_vs_fr(wr_data, fr_data)
     print("\nDone!")
 
 
