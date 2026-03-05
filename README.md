@@ -42,6 +42,14 @@ In standard self-play, both agents train exclusively against each other's latest
 
 The central question: **does zoo training actually help, and when does it help most?**
 
+## The A Parameter
+
+The zoo mixing rate **A** controls how often the seeker trains against past opponents vs. the current one. At A=5% (near-pure self-play), almost all training is against the latest hider. At A=50%, half of all rollouts use a randomly sampled past hider from the zoo.
+
+Higher A increases opponent diversity but reduces exposure to the latest (and presumably strongest) hider strategy. The optimal A depends on the game — harder games tend to benefit from more diversity, while easy games see little effect.
+
+We sweep A across 5%, 10%, 20%, 30%, and 50% for each of the 20 game configurations.
+
 ## Key Finding: Zoo Helps Most in Hard Games
 
 <p align="center">
