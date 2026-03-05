@@ -2,13 +2,16 @@
 """
 Generate all 4 README plots for the zoo_hider_shaped sweep.
 
+Win rate plots use gauntlet evaluation data (20 eval episodes per matchup,
+final seeker vs final hider) rather than noisy training metrics.
+
 Outputs:
   experiments/results/zoo_hider_shaped/seeker_wr_vs_A.png
   experiments/results/zoo_hider_shaped/zoo_improvement_summary.png
   experiments/results/zoo_hider_shaped/zoo_improvement_by_difficulty.png
   experiments/results/zoo_hider_shaped/gauntlet/fr_vs_A.png
 """
-import csv
+import json
 import itertools
 from pathlib import Path
 
@@ -24,7 +27,7 @@ STPS = [0.005, 0.01, 0.02, 0.05]
 HSMS = [1.0, 1.05, 1.1, 1.15, 1.2]
 A_VALUES = [0.05, 0.1, 0.2, 0.3, 0.5]
 SAMPLING_MODES = ["uniform", "thompson_loss"]
-SEEDS = [0, 1, 2]
+N_EVAL = 20  # episodes per gauntlet matchup
 
 
 def stp_str(stp):
@@ -35,49 +38,24 @@ def config_name(stp, hsm):
     return f"STP{stp_str(stp)}_HSM{round(hsm * 100)}"
 
 
-def load_final_win_rates():
-    """Load final seeker win rate for each (config, A, sampling, seed)."""
-    results = {}
-    for stp, hsm, A, sampling, seed in itertools.product(
-        STPS, HSMS, A_VALUES, SAMPLING_MODES, SEEDS
-    ):
-        cn = config_name(stp, hsm)
-        a_str = f"A{int(A * 100):02d}"
-        run_dir = BASE_DIR / cn / f"{a_str}_{sampling}" / f"seed_{seed}"
-        if not run_dir.exists():
-            continue
-        # Find the latest timestamped subdir
-        subdirs = sorted(run_dir.glob("2*"), key=lambda p: p.name)
-        if not subdirs:
-            continue
-        metrics_path = subdirs[-1] / "metrics.csv"
-        if not metrics_path.exists():
-            continue
-        with open(metrics_path) as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        if not rows:
-            continue
-        final_wr = float(rows[-1]["seeker_win_rate"])
-        key = (cn, stp, hsm, A, sampling)
-        results.setdefault(key, []).append(final_wr)
-    return results
+def load_gauntlet_data():
+    """Load final win rates and FR from gauntlet results across all seeds.
 
-
-def load_fr_summary():
-    """Load forgetting regret summary CSV."""
-    results = {}
-    csv_path = GAUNTLET_DIR / "fr_summary.csv"
-    if not csv_path.exists():
-        print(f"WARNING: {csv_path} not found, skipping FR plot")
-        return results
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            key = (row["config_name"], float(row["stp"]), float(row["hsm"]),
-                   float(row["A"]), row["sampling"])
-            results[key] = float(row["fr_full"])
-    return results
+    Returns:
+        wr_data: dict (config_name, stp, hsm, A, sampling) -> list of win rates (one per seed)
+        fr_data: dict (config_name, stp, hsm, A, sampling) -> list of FR values (one per seed)
+    """
+    wr_data = {}
+    fr_data = {}
+    for jf in sorted(GAUNTLET_DIR.rglob("gauntlet_result.json")):
+        with open(jf) as f:
+            r = json.load(f)
+        wm = r["win_matrix"]
+        wr = wm[-1][-1]  # final seeker vs final hider
+        key = (r["config_name"], r["stp"], r["hsm"], r["A"], r["sampling"])
+        wr_data.setdefault(key, []).append(wr)
+        fr_data.setdefault(key, []).append(r["fr_full"])
+    return wr_data, fr_data
 
 
 # ── Plot 1: Seeker WR vs A (4×5 grid) ──────────────────────────────
@@ -101,7 +79,7 @@ def plot_wr_vs_A(wr_data):
                     vals = wr_data.get(key, [])
                     if vals:
                         means.append(np.mean(vals))
-                        ses.append(np.std(vals) / np.sqrt(len(vals)))
+                        ses.append(np.std(vals, ddof=1) / np.sqrt(len(vals)))
                     else:
                         means.append(np.nan)
                         ses.append(0)
@@ -131,7 +109,6 @@ def plot_wr_vs_A(wr_data):
 
 # ── Plot 2: Zoo improvement summary (heatmap) ──────────────────────
 def plot_improvement_summary(wr_data):
-    # For each config: best zoo A (A > 5%) vs baseline (A = 5%)
     baseline_A = 0.05
     zoo_As = [a for a in A_VALUES if a > baseline_A]
 
@@ -139,7 +116,6 @@ def plot_improvement_summary(wr_data):
     for i, stp in enumerate(STPS):
         for j, hsm in enumerate(HSMS):
             cn = config_name(stp, hsm)
-            # Baseline: best of both sampling modes at A=5%
             bl_vals = []
             for s in SAMPLING_MODES:
                 key = (cn, stp, hsm, baseline_A, s)
@@ -148,7 +124,6 @@ def plot_improvement_summary(wr_data):
                 continue
             bl_mean = np.mean(bl_vals)
 
-            # Best zoo: best mean across A > 5% and both sampling modes
             best_zoo = bl_mean
             for A in zoo_As:
                 for s in SAMPLING_MODES:
@@ -156,7 +131,7 @@ def plot_improvement_summary(wr_data):
                     vals = wr_data.get(key, [])
                     if vals:
                         best_zoo = max(best_zoo, np.mean(vals))
-            improvements[i, j] = (best_zoo - bl_mean) * 100  # percentage points
+            improvements[i, j] = (best_zoo - bl_mean) * 100
 
     fig, ax = plt.subplots(figsize=(8, 5))
     im = ax.imshow(improvements, cmap="RdYlGn", vmin=-10, vmax=40,
@@ -214,14 +189,10 @@ def plot_improvement_by_difficulty(wr_data):
                         best_A = A
                         best_sampling = s
 
-            # SE of the difference (pooled from both)
-            best_vals = []
-            for s in SAMPLING_MODES:
-                key = (cn, stp, hsm, best_A, s)
-                if best_A == baseline_A or s == best_sampling:
-                    best_vals.extend(wr_data.get(key, []))
-            se_bl = np.std(bl_vals) / np.sqrt(len(bl_vals)) if len(bl_vals) > 1 else 0
-            se_zoo = np.std(best_vals) / np.sqrt(len(best_vals)) if len(best_vals) > 1 else 0
+            # SE of improvement: pooled from baseline and best zoo seeds
+            best_vals = wr_data.get((cn, stp, hsm, best_A, best_sampling), []) if best_A != baseline_A else bl_vals
+            se_bl = np.std(bl_vals, ddof=1) / np.sqrt(len(bl_vals)) if len(bl_vals) > 1 else 0
+            se_zoo = np.std(best_vals, ddof=1) / np.sqrt(len(best_vals)) if len(best_vals) > 1 else 0
             se_diff = np.sqrt(se_bl**2 + se_zoo**2)
 
             improvement = (best_zoo_mean - bl_mean) * 100
@@ -230,7 +201,6 @@ def plot_improvement_by_difficulty(wr_data):
                 se=se_diff * 100, best_A=best_A,
             ))
 
-    # Sort by improvement magnitude
     configs.sort(key=lambda x: x["improvement"], reverse=True)
 
     fig, ax = plt.subplots(figsize=(16, 6.5))
@@ -245,9 +215,9 @@ def plot_improvement_by_difficulty(wr_data):
         else:
             colors.append("#66bb6a")  # easy
 
-    bars = ax.bar(x, [c["improvement"] for c in configs],
-                  yerr=[c["se"] for c in configs],
-                  capsize=3, color=colors, edgecolor="white", linewidth=0.5)
+    ax.bar(x, [c["improvement"] for c in configs],
+           yerr=[c["se"] for c in configs],
+           capsize=3, color=colors, edgecolor="white", linewidth=0.5)
 
     for i, c in enumerate(configs):
         a_label = f"A={int(c['best_A']*100)}%"
@@ -263,7 +233,6 @@ def plot_improvement_by_difficulty(wr_data):
                  fontsize=13)
     ax.grid(axis="y", alpha=0.3)
 
-    # Legend
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor="#e53935", label="Hard (baseline WR < 70%)"),
@@ -298,12 +267,18 @@ def plot_fr_vs_A(fr_data):
                 ("uniform", "#00bcd4", "uniform"),
                 ("thompson_loss", "#e91e63", "thompson_loss"),
             ]:
-                vals = []
+                means, ses = [], []
                 for A in A_VALUES:
                     key = (cn, stp, hsm, A, sampling)
-                    vals.append(fr_data.get(key, np.nan))
-                ax.plot(a_pct, vals, marker="o", markersize=4,
-                       label=label, color=color, linewidth=1.5)
+                    vals = fr_data.get(key, [])
+                    if vals:
+                        means.append(np.mean(vals))
+                        ses.append(np.std(vals, ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0)
+                    else:
+                        means.append(np.nan)
+                        ses.append(0)
+                ax.errorbar(a_pct, means, yerr=ses, marker="o", markersize=4,
+                           capsize=3, label=label, color=color, linewidth=1.5)
 
             ax.set_ylim(-0.02, 0.8)
             ax.set_xticks(a_pct)
@@ -327,13 +302,11 @@ def plot_fr_vs_A(fr_data):
 
 
 def main():
-    print("Loading win rate data...")
-    wr_data = load_final_win_rates()
+    print("Loading gauntlet data...")
+    wr_data, fr_data = load_gauntlet_data()
     print(f"  {len(wr_data)} (config, A, sampling) combos loaded")
-
-    print("Loading FR data...")
-    fr_data = load_fr_summary()
-    print(f"  {len(fr_data)} FR entries loaded")
+    n_seeds = [len(v) for v in wr_data.values()]
+    print(f"  seeds per combo: min={min(n_seeds)}, max={max(n_seeds)}")
 
     print("\nGenerating plots...")
     plot_wr_vs_A(wr_data)

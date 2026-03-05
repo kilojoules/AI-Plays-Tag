@@ -2,7 +2,7 @@
 
 **Does training against past opponents make RL agents stronger?**
 
-In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+33 pp on average) in the hardest games.**
+In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+39 pp on average) in the hardest games.**
 
 <p align="center">
   <img src="docs/header_animation.gif" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480">
@@ -51,14 +51,14 @@ The central question: **does zoo training actually help, and when does it help m
 We compared the best zoo configuration (A > 5%) against a near-pure self-play baseline (A = 5%) for each of the 20 game configs:
 
 - **Zoo helped in 20/20 configs** and hurt in 0/20
-- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+33.2 pp** on average, helping in all 14 configs
-- **Medium games** (baseline 70–90%): **+16.6 pp**, helping in all 6 configs
+- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+39.1 pp** on average across all 17 configs
+- **Medium games** (baseline 70–90%): **+16.9 pp** across 3 configs
 
 <p align="center">
   <img src="experiments/results/zoo_hider_shaped/zoo_improvement_by_difficulty.png" alt="Zoo improvement per config, sorted by magnitude" width="900">
   <br>
   <em>Win rate improvement for each game config (best zoo A vs. A=5% baseline), sorted by magnitude.<br>
-  Labels show which A% was optimal. Error bars = SE of the difference across 3 seeds.</em>
+  Labels show which A% was optimal. Win rates measured via gauntlet evaluation (20 episodes per matchup). Error bars = SE across 3 training seeds.</em>
 </p>
 
 The interpretation: in hard games, pure self-play gets stuck in co-adaptation cycles where the seeker overfits to the current hider. Training against diverse past hiders breaks this cycle. With hider reward shaping (distance-change incentives), the hider learns stronger evasion, making games harder overall — which amplifies the benefit of zoo training.
@@ -71,7 +71,7 @@ The interpretation: in hard games, pure self-play gets stuck in co-adaptation cy
   <img src="experiments/results/zoo_hider_shaped/seeker_wr_vs_A.png" alt="Seeker win rate vs A across 20 game configurations" width="900">
   <br>
   <em>Seeker win rate vs. A for each game config. Rows = STP, columns = HSM.<br>
-  Cyan = uniform sampling, pink = Thompson-loss sampling. Error bars = SE over 3 seeds.</em>
+  Cyan = uniform sampling, pink = Thompson-loss sampling. Win rates from gauntlet evaluation (final seeker vs. final hider, 20 episodes). Error bars = SE across 3 training seeds.</em>
 </p>
 
 No single A value dominates — the optimal zoo fraction varies by game. Thompson-loss sampling (which prioritizes opponents that beat the agent) edges out uniform sampling slightly, winning in 11/20 configs.
@@ -87,7 +87,7 @@ FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
 <p align="center">
   <img src="experiments/results/zoo_hider_shaped/gauntlet/fr_vs_A.png" alt="Forgetting Regret vs A" width="900">
   <br>
-  <em>Forgetting Regret vs. A across game configs. 20 eval episodes per matchup, seed 0 only.</em>
+  <em>Forgetting Regret vs. A across game configs. Computed from checkpoint gauntlet (13 subsampled checkpoints, 20 eval episodes per matchup). Error bars = SE across 3 training seeds.</em>
 </p>
 
 The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variable forgetting. Easy games (bottom rows) have FR near zero regardless of A. Interestingly, higher A does not consistently reduce FR — the relationship is noisy and game-dependent.

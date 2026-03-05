@@ -36,7 +36,7 @@ STPS = [0.005, 0.01, 0.02, 0.05]
 HSMS = [1.0, 1.05, 1.1, 1.15, 1.2]
 A_VALUES = [0.05, 0.1, 0.2, 0.3, 0.5]
 SAMPLING_MODES = ["uniform", "thompson_loss"]
-SEED = 0  # only run gauntlet on seed 0
+SEEDS = [0, 1, 2]
 
 CKPT_SUBSAMPLE = 4  # take every 4th checkpoint (~12 from 48)
 N_EVAL_EPISODES = 20
@@ -52,13 +52,13 @@ def stp_str(stp):
 
 def build_task_table():
     tasks = []
-    for stp, hsm, A, sampling in itertools.product(
-        STPS, HSMS, A_VALUES, SAMPLING_MODES
+    for stp, hsm, A, sampling, seed in itertools.product(
+        STPS, HSMS, A_VALUES, SAMPLING_MODES, SEEDS
     ):
         hsm_s = f"{round(hsm * 100)}"
         config_name = f"STP{stp_str(stp)}_HSM{hsm_s}"
         a_str = f"A{int(A * 100):02d}"
-        run_name = f"{config_name}/{a_str}_{sampling}/seed_{SEED}"
+        run_name = f"{config_name}/{a_str}_{sampling}/seed_{seed}"
         tasks.append(dict(
             run_name=run_name,
             config_name=config_name,
@@ -66,6 +66,7 @@ def build_task_table():
             hsm=hsm,
             A=A,
             sampling=sampling,
+            seed=seed,
         ))
     return tasks
 
@@ -195,6 +196,7 @@ def run_gauntlet(task, dry_run=False):
         hsm=task["hsm"],
         A=task["A"],
         sampling=task["sampling"],
+        seed=task["seed"],
         n_checkpoints=n,
         fr_full=fr_full,
         fr_final=fr_final,
@@ -228,7 +230,7 @@ def aggregate():
     out_csv = OUTPUT_DIR / "fr_summary.csv"
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
-            "config_name", "stp", "hsm", "A", "sampling",
+            "config_name", "stp", "hsm", "A", "sampling", "seed",
             "fr_full", "fr_final", "n_checkpoints",
         ])
         writer.writeheader()
@@ -238,11 +240,11 @@ def aggregate():
     print(f"Aggregated {len(results)} results -> {out_csv}")
 
     # Print summary table
-    print(f"\n{'Config':<16} {'A':>5} {'Sampling':<15} {'FR_full':>8} {'FR_final':>9}")
-    print("-" * 60)
-    for r in sorted(results, key=lambda x: (x["config_name"], x["A"], x["sampling"])):
+    print(f"\n{'Config':<16} {'A':>5} {'Sampling':<15} {'Seed':>4} {'FR_full':>8} {'FR_final':>9}")
+    print("-" * 65)
+    for r in sorted(results, key=lambda x: (x["config_name"], x["A"], x["sampling"], x["seed"])):
         print(f"{r['config_name']:<16} {r['A']:5.2f} {r['sampling']:<15} "
-              f"{r['fr_full']:8.4f} {r['fr_final']:9.4f}")
+              f"{r['seed']:4d} {r['fr_full']:8.4f} {r['fr_final']:9.4f}")
 
 
 def main():
