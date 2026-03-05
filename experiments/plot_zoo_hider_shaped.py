@@ -301,7 +301,72 @@ def plot_fr_vs_A(fr_data):
     print(f"Saved {out}")
 
 
-# ── Plot 5: A* vs Forgetting Regret (scatter) ─────────────────────
+# ── Plot 5: FR heatmap examples ────────────────────────────────────
+def plot_fr_heatmap_examples():
+    """Show win-rate matrix heatmaps for high-FR and low-FR runs."""
+    # Find high-FR and low-FR examples
+    high_fr = None
+    low_fr = None
+    for jf in sorted(GAUNTLET_DIR.rglob("gauntlet_result.json")):
+        with open(jf) as f:
+            r = json.load(f)
+        if r["n_checkpoints"] < 12:
+            continue
+        wm_mean = np.array(r["win_matrix"]).mean()
+        # High FR: want visible forgetting with some wins
+        if r["fr_full"] > 0.3 and wm_mean > 0.3:
+            if high_fr is None or r["fr_full"] > high_fr["fr_full"]:
+                high_fr = r
+        # Low FR: want a run that mostly wins (high WR, low forgetting)
+        if r["fr_full"] < 0.05 and wm_mean > 0.7:
+            if low_fr is None or wm_mean > np.array(low_fr["win_matrix"]).mean():
+                low_fr = r
+
+    if not high_fr or not low_fr:
+        print("Could not find suitable FR examples, skipping heatmap")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    for ax, result, title_suffix in [
+        (axes[0], high_fr, "High Forgetting"),
+        (axes[1], low_fr, "Low Forgetting"),
+    ]:
+        wm = np.array(result["win_matrix"])
+        n = len(wm)
+        updates = result["updates"]
+
+        im = ax.imshow(wm, cmap="RdYlGn", vmin=0, vmax=1,
+                       aspect="equal", origin="upper")
+
+        # Label every other tick to avoid crowding
+        tick_step = max(1, n // 7)
+        tick_idx = list(range(0, n, tick_step))
+        if n - 1 not in tick_idx:
+            tick_idx.append(n - 1)
+        ax.set_xticks(tick_idx)
+        ax.set_xticklabels([str(updates[i]) for i in tick_idx], fontsize=7, rotation=45)
+        ax.set_yticks(tick_idx)
+        ax.set_yticklabels([str(updates[i]) for i in tick_idx], fontsize=7)
+        ax.set_xlabel("Hider checkpoint (update)", fontsize=10)
+        ax.set_ylabel("Seeker checkpoint (update)", fontsize=10)
+
+        cn = result["config_name"]
+        a_pct = int(result["A"] * 100)
+        sampling = result["sampling"]
+        fr = result["fr_full"]
+        ax.set_title(f"{title_suffix}: {cn}, A={a_pct}% {sampling}\nFR = {fr:.3f}",
+                     fontsize=11)
+
+    fig.colorbar(im, ax=axes, label="Seeker Win Rate", shrink=0.8)
+    fig.tight_layout()
+    out = BASE_DIR / "fr_heatmap_examples.png"
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out}")
+
+
+# ── Plot 6: A* vs Forgetting Regret (scatter) ─────────────────────
 def plot_astar_vs_fr(wr_data, fr_data):
     """Scatter plot of optimal A (A*) vs its forgetting regret for each config."""
     baseline_A = 0.05
@@ -391,6 +456,7 @@ def main():
     plot_improvement_summary(wr_data)
     plot_improvement_by_difficulty(wr_data)
     plot_fr_vs_A(fr_data)
+    plot_fr_heatmap_examples()
     plot_astar_vs_fr(wr_data, fr_data)
     print("\nDone!")
 

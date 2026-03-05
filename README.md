@@ -78,7 +78,15 @@ No single A value dominates — the optimal zoo fraction varies by game. Thompso
 
 ### Forgetting Regret
 
-We measure forgetting with the **Forgetting Regret (FR)** metric. For each training run, we pit every saved seeker checkpoint against every saved hider checkpoint in a round-robin gauntlet, producing a win-rate matrix. FR is the average amount the seeker has regressed from its historical peak against each hider:
+We measure forgetting with the **Forgetting Regret (FR)** metric. For each training run, we pit every saved seeker checkpoint against every saved hider checkpoint in a round-robin gauntlet, producing a win-rate matrix W where W[i,j] is the win rate of seeker checkpoint i against hider checkpoint j.
+
+<p align="center">
+  <img src="experiments/results/zoo_hider_shaped/fr_heatmap_examples.png" alt="Win-rate matrix heatmaps showing high vs low forgetting" width="900">
+  <br>
+  <em>Win-rate matrices from two runs. Left: high forgetting — the seeker learns to beat early hiders (green top-left) but loses that ability later (red bottom-left). Right: low forgetting — the seeker maintains high win rates across all hider checkpoints. Each cell = 20 eval episodes.</em>
+</p>
+
+FR captures how much the seeker has regressed from its historical peak against each hider:
 
 ```
 FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
