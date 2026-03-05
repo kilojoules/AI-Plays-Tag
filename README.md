@@ -2,7 +2,7 @@
 
 **Does training against past opponents make RL agents stronger?**
 
-In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in 18 out of 20 game configurations, with the largest gains (+31 pp on average) in the hardest games.**
+In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+33 pp on average) in the hardest games.**
 
 <p align="center">
   <img src="docs/header_animation.gif" alt="Zoo-trained tag game: seeker (red) vs faster hider (blue) in four_corners arena" width="480">
@@ -45,31 +45,30 @@ The central question: **does zoo training actually help, and when does it help m
 ## Key Finding: Zoo Helps Most in Hard Games
 
 <p align="center">
-  <img src="experiments/results/zoo_asweep/zoo_improvement_summary.png" alt="Zoo training helps most in hard games" width="600">
+  <img src="experiments/results/zoo_hider_shaped/zoo_improvement_summary.png" alt="Zoo training helps most in hard games" width="600">
 </p>
 
 We compared the best zoo configuration (A > 5%) against a near-pure self-play baseline (A = 5%) for each of the 20 game configs:
 
-- **Zoo helped in 18/20 configs** and hurt in 0/20
-- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+31.5 pp** on average, helping in all 8 configs
-- **Medium games** (baseline 70–90%): **+11.8 pp**, helping in 9/10
-- **Easy games** (baseline > 90%): **+2.9 pp** — the seeker already wins; zoo adds little
+- **Zoo helped in 20/20 configs** and hurt in 0/20
+- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+33.2 pp** on average, helping in all 14 configs
+- **Medium games** (baseline 70–90%): **+16.6 pp**, helping in all 6 configs
 
 <p align="center">
-  <img src="experiments/results/zoo_asweep/zoo_improvement_by_difficulty.png" alt="Zoo improvement per config, sorted by magnitude" width="900">
+  <img src="experiments/results/zoo_hider_shaped/zoo_improvement_by_difficulty.png" alt="Zoo improvement per config, sorted by magnitude" width="900">
   <br>
   <em>Win rate improvement for each game config (best zoo A vs. A=5% baseline), sorted by magnitude.<br>
   Labels show which A% was optimal. Error bars = SE of the difference across 3 seeds.</em>
 </p>
 
-The interpretation: in hard games, pure self-play gets stuck in co-adaptation cycles where the seeker overfits to the current hider. Training against diverse past hiders breaks this cycle. In easy games, the seeker wins regardless, so diversity adds negligible benefit.
+The interpretation: in hard games, pure self-play gets stuck in co-adaptation cycles where the seeker overfits to the current hider. Training against diverse past hiders breaks this cycle. With hider reward shaping (distance-change incentives), the hider learns stronger evasion, making games harder overall — which amplifies the benefit of zoo training.
 
 ## Detailed Results
 
 ### Win Rate vs. Zoo Mixing Rate
 
 <p align="center">
-  <img src="experiments/results/zoo_asweep/seeker_wr_vs_A.png" alt="Seeker win rate vs A across 20 game configurations" width="900">
+  <img src="experiments/results/zoo_hider_shaped/seeker_wr_vs_A.png" alt="Seeker win rate vs A across 20 game configurations" width="900">
   <br>
   <em>Seeker win rate vs. A for each game config. Rows = STP, columns = HSM.<br>
   Cyan = uniform sampling, pink = Thompson-loss sampling. Error bars = SE over 3 seeds.</em>
@@ -86,24 +85,26 @@ FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
 ```
 
 <p align="center">
-  <img src="experiments/results/zoo_asweep/gauntlet/fr_vs_A.png" alt="Forgetting Regret vs A" width="900">
+  <img src="experiments/results/zoo_hider_shaped/gauntlet/fr_vs_A.png" alt="Forgetting Regret vs A" width="900">
   <br>
-  <em>Forgetting Regret vs. A across game configs. Bootstrapped SE from 20 eval episodes per matchup.</em>
+  <em>Forgetting Regret vs. A across game configs. 20 eval episodes per matchup, seed 0 only.</em>
 </p>
 
 The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variable forgetting. Easy games (bottom rows) have FR near zero regardless of A. Interestingly, higher A does not consistently reduce FR — the relationship is noisy and game-dependent.
 
 ## Experimental Design
 
-The full sweep covers **2,800 training runs**:
+The full sweep covers **600 training runs**:
 
 ```
 20 game configs  (4 STP x 5 HSM)
- x 7 A values   (5%, 10%, 20%, 30%, 50%, 75%, 90%)
+ x 5 A values   (5%, 10%, 20%, 30%, 50%)
  x 2 sampling   (uniform, thompson_loss)
- x 10 seeds
- = 2,800 runs @ 10M timesteps each
+ x 3 seeds
+ = 600 runs @ 10M timesteps each
 ```
+
+The hider receives additional reward shaping: a distance-change reward (`hider_dist_reward=0.14`) and an absolute-distance reward (`hider_abs_dist_reward=0.1`) that encourage active evasion rather than passive hiding.
 
 All runs use the `four_corners` arena layout. The seeker trains against a hider zoo; the hider always faces the latest seeker. When sampling from the zoo, we compare two strategies:
 
@@ -120,10 +121,11 @@ trainer/
   train_selfplay.py       Pure self-play baseline
 
 experiments/
-  zoo_asweep_tasks.py     A-sweep SLURM task generator
-  zoo_asweep_gauntlet.py  Checkpoint gauntlet + forgetting regret
-  animate_zoo_sweep.py    Episode animation generator
-  checkpoint_gauntlet.py  Cross-checkpoint evaluation
+  zoo_hider_shaped_tasks.py      A-sweep SLURM task generator (hider-shaped)
+  zoo_hider_shaped_gauntlet.py   Checkpoint gauntlet + forgetting regret
+  plot_zoo_hider_shaped.py       Generate all README plots
+  animate_zoo_sweep.py           Episode animation generator
+  checkpoint_gauntlet.py         Cross-checkpoint evaluation
 ```
 
 ## Quick Start
@@ -167,10 +169,9 @@ pixi run python trainer/train_selfplay.py --timesteps 1000000 --layout four_corn
 ### Reproduce the full sweep (SLURM)
 
 ```bash
-sbatch run_zoo_asweep.sh                    # seeds 0-2 (840 tasks)
-sbatch run_zoo_asweep_extra_seeds.sh        # seeds 3-9 batch 1 (980 tasks)
-sbatch run_zoo_asweep_extra_seeds_b2.sh     # seeds 3-9 batch 2 (980 tasks)
-sbatch run_zoo_asweep_gauntlet.sh           # forgetting regret gauntlets (280 tasks)
+sbatch run_zoo_hider_shaped.sh              # training sweep (600 tasks)
+sbatch run_zoo_hider_shaped_gauntlet.sh     # forgetting regret gauntlets (200 tasks)
+pixi run python experiments/plot_zoo_hider_shaped.py  # generate all plots
 ```
 
 ## Technical Details
