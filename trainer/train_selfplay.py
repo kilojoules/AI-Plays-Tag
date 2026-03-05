@@ -340,6 +340,10 @@ def main():
                         help="Max speed multiplier when sprinting")
     parser.add_argument("--seeker-time-penalty", type=float, default=-0.005,
                         help="Per-step time penalty for seeker (default: -0.005)")
+    parser.add_argument("--hider-dist-reward", type=float, default=0.0,
+                        help="Hider reward scale for increasing distance (default: 0.0)")
+    parser.add_argument("--hider-abs-dist-reward", type=float, default=0.1,
+                        help="Hider reward scale for absolute distance (default: 0.1)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducibility")
     parser.add_argument("--output-dir", type=str,
@@ -363,6 +367,8 @@ def main():
         hider_speed_mult=args.hider_speed_mult,
         sprint_speed_mult=args.sprint_speed_mult,
         seeker_time_penalty=args.seeker_time_penalty,
+        hider_dist_reward_scale=args.hider_dist_reward,
+        hider_abs_dist_reward_scale=args.hider_abs_dist_reward,
     )
 
     trainer = SelfPlayTrainer(config, env_config=env_config)

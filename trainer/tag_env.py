@@ -98,6 +98,10 @@ class TagEnvConfig:
     timeout_hider_bonus: float = 6.0
     timeout_seeker_penalty: float = 6.0
 
+    # Hider distance shaping
+    hider_dist_reward_scale: float = 0.0   # Reward for increasing distance (0 = off)
+    hider_abs_dist_reward_scale: float = 0.1  # Reward proportional to absolute distance
+
     # Arena layout
     layout: str = 'empty'          # Layout name: 'empty', 'four_corners', 'central_cross', 'playground'
 
@@ -610,8 +614,10 @@ class VecTagEnv:
 
         # Distance-based shaping
         seeker_rewards += progress * self.cfg.distance_reward_scale
-        # Hider: reward for being far (absolute distance), not for increasing distance
-        hider_rewards += (distances / self.cfg.arena_half) * 0.1
+        # Hider: reward for increasing distance from seeker
+        hider_rewards -= progress * self.cfg.hider_dist_reward_scale
+        # Hider: reward proportional to absolute distance
+        hider_rewards += (distances / self.cfg.arena_half) * self.cfg.hider_abs_dist_reward_scale
 
         # Time-based rewards
         seeker_rewards += self.cfg.seeker_time_penalty
