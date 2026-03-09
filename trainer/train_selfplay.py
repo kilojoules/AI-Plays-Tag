@@ -340,10 +340,22 @@ def main():
                         help="Max speed multiplier when sprinting")
     parser.add_argument("--seeker-time-penalty", type=float, default=-0.005,
                         help="Per-step time penalty for seeker (default: -0.005)")
+    parser.add_argument("--distance-reward-scale", type=float, default=0.14,
+                        help="Seeker distance reward scale (default: 0.14)")
+    parser.add_argument("--runner-survival-bonus", type=float, default=0.01,
+                        help="Hider per-step survival bonus (default: 0.01)")
     parser.add_argument("--hider-dist-reward", type=float, default=0.0,
                         help="Hider reward scale for increasing distance (default: 0.0)")
     parser.add_argument("--hider-abs-dist-reward", type=float, default=0.1,
                         help="Hider reward scale for absolute distance (default: 0.1)")
+    parser.add_argument("--hider-wall-prox-penalty", type=float, default=0.0,
+                        help="Hider penalty when near walls (default: 0.0)")
+    parser.add_argument("--hider-min-speed-reward", type=float, default=0.0,
+                        help="Hider bonus for moving (default: 0.0)")
+    parser.add_argument("--seeker-escalating-urgency", action="store_true",
+                        help="Seeker time penalty escalates over episode")
+    parser.add_argument("--area-coverage-bonus", type=float, default=0.0,
+                        help="Reward for visiting new grid cells (default: 0.0)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducibility")
     parser.add_argument("--output-dir", type=str,
@@ -367,8 +379,14 @@ def main():
         hider_speed_mult=args.hider_speed_mult,
         sprint_speed_mult=args.sprint_speed_mult,
         seeker_time_penalty=args.seeker_time_penalty,
+        distance_reward_scale=args.distance_reward_scale,
+        runner_survival_bonus=args.runner_survival_bonus,
         hider_dist_reward_scale=args.hider_dist_reward,
         hider_abs_dist_reward_scale=args.hider_abs_dist_reward,
+        hider_wall_prox_penalty=args.hider_wall_prox_penalty,
+        hider_min_speed_reward=args.hider_min_speed_reward,
+        seeker_escalating_urgency=args.seeker_escalating_urgency,
+        area_coverage_bonus=args.area_coverage_bonus,
     )
 
     trainer = SelfPlayTrainer(config, env_config=env_config)

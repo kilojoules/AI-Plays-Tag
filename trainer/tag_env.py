@@ -102,6 +102,19 @@ class TagEnvConfig:
     hider_dist_reward_scale: float = 0.0   # Reward for increasing distance (0 = off)
     hider_abs_dist_reward_scale: float = 0.1  # Reward proportional to absolute distance
 
+    # Wall proximity penalty (hider): applied when within wall_prox_dist of any wall
+    hider_wall_prox_penalty: float = 0.0   # Per-step penalty (negative value to penalize)
+    wall_prox_dist: float = 2.0            # Distance threshold for wall penalty
+
+    # Hider minimum speed reward: bonus when hider is moving
+    hider_min_speed_reward: float = 0.0    # Per-step reward when hider speed > 1.0
+
+    # Seeker escalating urgency: time penalty scales from 1x to 2x over episode
+    seeker_escalating_urgency: bool = False
+
+    # Area coverage bonus: reward for visiting new grid cells (6x6 grid)
+    area_coverage_bonus: float = 0.0       # Per new cell visited
+
     # Arena layout
     layout: str = 'empty'          # Layout name: 'empty', 'four_corners', 'central_cross', 'playground'
 
@@ -178,6 +191,11 @@ class VecTagEnv:
         # Stamina state: [num_envs, 2] - one per agent
         self.stamina = np.full((num_envs, 2), self.cfg.max_stamina, dtype=np.float32)
 
+        # Area coverage grid: 6x6 cells, tracked per agent per env
+        self._coverage_grid_size = 6
+        self.coverage_grid = np.zeros(
+            (num_envs, 2, self._coverage_grid_size, self._coverage_grid_size), dtype=bool)
+
         # Observation dimension: position(2) + velocity(2) + relative(4) + roles(2) + forward(2) + rays(72) + safe_zone(3) + stamina(2 if sprint)
         self.obs_dim = 12 + self.cfg.num_rays * 2 + 3 + (2 if self.cfg.enable_sprint else 0)
         self.act_dim = 3  # move_x, move_z, sprint_intensity (3rd dim used for sprint when enabled)
@@ -235,6 +253,9 @@ class VecTagEnv:
 
         # Reset stamina
         self.stamina[env_ids] = self.cfg.max_stamina
+
+        # Reset coverage grid
+        self.coverage_grid[env_ids] = False
 
         # Compute initial distances
         self.prev_distances[env_ids] = self._compute_distances(env_ids)
@@ -619,8 +640,53 @@ class VecTagEnv:
         # Hider: reward proportional to absolute distance
         hider_rewards += (distances / self.cfg.arena_half) * self.cfg.hider_abs_dist_reward_scale
 
-        # Time-based rewards
-        seeker_rewards += self.cfg.seeker_time_penalty
+        # Wall proximity penalty (hider)
+        if self.cfg.hider_wall_prox_penalty != 0.0:
+            eids = np.arange(self.num_envs)
+            hider_idx_arr = 1 - self.seeker_idx
+            hider_pos = self.positions[eids, hider_idx_arr]  # [E, 2]
+            wall_dist = self.cfg.arena_half - np.abs(hider_pos)  # [E, 2]
+            min_wall_dist = np.min(wall_dist, axis=1)  # [E]
+            near_wall = min_wall_dist < self.cfg.wall_prox_dist
+            # Linear penalty: full at wall, zero at threshold
+            penalty_scale = 1.0 - min_wall_dist / self.cfg.wall_prox_dist
+            penalty_scale = np.clip(penalty_scale, 0.0, 1.0)
+            hider_rewards += self.cfg.hider_wall_prox_penalty * penalty_scale
+
+        # Hider minimum speed reward
+        if self.cfg.hider_min_speed_reward != 0.0:
+            eids = np.arange(self.num_envs)
+            hider_idx_arr = 1 - self.seeker_idx
+            hider_speed = np.linalg.norm(self.velocities[eids, hider_idx_arr], axis=1)
+            hider_rewards += self.cfg.hider_min_speed_reward * (hider_speed > 1.0)
+
+        # Area coverage bonus
+        if self.cfg.area_coverage_bonus != 0.0:
+            eids = np.arange(self.num_envs)
+            gs = self._coverage_grid_size
+            half = self.cfg.arena_half
+            for agent_idx in range(2):
+                pos = self.positions[eids, agent_idx]  # [E, 2]
+                # Map position to grid cell
+                gx = np.clip(((pos[:, 0] + half) / (2 * half) * gs).astype(int), 0, gs - 1)
+                gy = np.clip(((pos[:, 1] + half) / (2 * half) * gs).astype(int), 0, gs - 1)
+                # Check which are newly visited
+                already = self.coverage_grid[eids, agent_idx, gx, gy]
+                new_cells = ~already
+                # Mark visited
+                self.coverage_grid[eids, agent_idx, gx, gy] = True
+                # Assign reward based on role
+                is_seeker = (self.seeker_idx == agent_idx)
+                is_hider = ~is_seeker
+                seeker_rewards += self.cfg.area_coverage_bonus * new_cells * is_seeker
+                hider_rewards += self.cfg.area_coverage_bonus * new_cells * is_hider
+
+        # Time-based rewards (with optional escalating urgency)
+        if self.cfg.seeker_escalating_urgency:
+            urgency_scale = 1.0 + self.time_elapsed / self.cfg.time_limit
+            seeker_rewards += self.cfg.seeker_time_penalty * urgency_scale
+        else:
+            seeker_rewards += self.cfg.seeker_time_penalty
         hider_rewards += self.cfg.runner_survival_bonus
 
         # Terminal rewards
@@ -634,6 +700,15 @@ class VecTagEnv:
         self.dones = tagged | timed_out
         self.prev_distances = distances.copy()
 
+        # Compute behavioral metrics
+        eids = np.arange(self.num_envs)
+        hider_idx_arr = 1 - self.seeker_idx
+        hider_pos = self.positions[eids, hider_idx_arr]
+        hider_wall_dist = self.cfg.arena_half - np.abs(hider_pos)
+        hider_min_wall = np.min(hider_wall_dist, axis=1)
+        hider_speed = np.linalg.norm(self.velocities[eids, hider_idx_arr], axis=1)
+        seeker_speed = np.linalg.norm(self.velocities[eids, self.seeker_idx], axis=1)
+
         # Build info dict
         infos = {
             'tagged': tagged.copy(),
@@ -642,6 +717,10 @@ class VecTagEnv:
             'time_elapsed': self.time_elapsed.copy(),
             'seeker_wins': tagged.sum(),
             'hider_wins': (timed_out & ~tagged).sum(),
+            'hider_wall_dist_mean': float(hider_min_wall.mean()),
+            'hider_near_wall_frac': float((hider_min_wall < 2.0).mean()),
+            'hider_speed_mean': float(hider_speed.mean()),
+            'seeker_speed_mean': float(seeker_speed.mean()),
         }
 
         # Get new observations
