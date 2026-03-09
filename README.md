@@ -1,5 +1,7 @@
 # AI Plays Tag
 
+**[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
+
 **Does training against past opponents make RL agents stronger?**
 
 In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+39 pp on average) in the hardest games.**
