@@ -51,6 +51,7 @@ class ZooTrainConfig:
     lr: float = 1e-4  # Lower for stability
     train_iters: int = 10
     target_kl: float = 0.02
+    entropy_coef: float = 0.01
 
     # Zoo parameters
     latest_opponent_prob: float = 0.1  # 1-A: probability of latest opponent (A = zoo prob)
@@ -243,6 +244,7 @@ class ZooTrainer:
             lr=config.lr,
             train_iters=config.train_iters,
             target_kl=config.target_kl,
+            entropy_coef=config.entropy_coef,
         )
 
         # Learning policies (these get trained)
@@ -688,6 +690,18 @@ def main():
                         help="Batch size for updates")
     parser.add_argument("--lr", type=float, default=1e-4,
                         help="Learning rate")
+    parser.add_argument("--gamma", type=float, default=0.99,
+                        help="Discount factor")
+    parser.add_argument("--gae-lambda", type=float, default=0.95,
+                        help="GAE lambda")
+    parser.add_argument("--clip-ratio", type=float, default=0.2,
+                        help="PPO clip ratio")
+    parser.add_argument("--train-iters", type=int, default=10,
+                        help="PPO epochs per update")
+    parser.add_argument("--target-kl", type=float, default=0.02,
+                        help="KL divergence target for early stopping")
+    parser.add_argument("--entropy-coef", type=float, default=0.01,
+                        help="Entropy bonus coefficient")
     parser.add_argument("--latest-prob", "-A", type=float, default=0.1,
                         help="Probability of using latest opponent (1-A; legacy naming)")
     parser.add_argument("--use-seeker-zoo", action="store_true",
@@ -714,6 +728,18 @@ def main():
                         help="Hider reward scale for increasing distance (default: 0.0)")
     parser.add_argument("--hider-abs-dist-reward", type=float, default=0.1,
                         help="Hider reward scale for absolute distance (default: 0.1)")
+    parser.add_argument("--distance-reward-scale", type=float, default=0.14,
+                        help="Seeker pursuit distance reward scale (default: 0.14)")
+    parser.add_argument("--runner-survival-bonus", type=float, default=0.01,
+                        help="Hider per-step survival bonus (default: 0.01)")
+    parser.add_argument("--hider-wall-prox-penalty", type=float, default=0.0,
+                        help="Hider wall proximity penalty (default: 0.0)")
+    parser.add_argument("--hider-min-speed-reward", type=float, default=0.0,
+                        help="Hider speed bonus when moving (default: 0.0)")
+    parser.add_argument("--seeker-escalating-urgency", action="store_true",
+                        help="Escalate seeker time penalty over episode")
+    parser.add_argument("--area-coverage-bonus", type=float, default=0.0,
+                        help="Bonus per new grid cell visited (default: 0.0)")
     parser.add_argument("--sampling-strategy", type=str, default="uniform",
                         choices=["uniform", "thompson", "thompson_loss"],
                         help="Zoo sampling strategy (default: uniform)")
@@ -733,7 +759,13 @@ def main():
         num_envs=args.num_envs,
         total_timesteps=args.timesteps,
         batch_size=args.batch_size,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        clip_ratio=args.clip_ratio,
         lr=args.lr,
+        train_iters=args.train_iters,
+        target_kl=args.target_kl,
+        entropy_coef=args.entropy_coef,
         latest_opponent_prob=args.latest_prob,
         use_seeker_zoo=args.use_seeker_zoo,
         zoo_update_interval=args.zoo_interval,
@@ -748,8 +780,14 @@ def main():
         hider_speed_mult=args.hider_speed_mult,
         sprint_speed_mult=args.sprint_speed_mult,
         seeker_time_penalty=args.seeker_time_penalty,
+        distance_reward_scale=args.distance_reward_scale,
+        runner_survival_bonus=args.runner_survival_bonus,
         hider_dist_reward_scale=args.hider_dist_reward,
         hider_abs_dist_reward_scale=args.hider_abs_dist_reward,
+        hider_wall_prox_penalty=args.hider_wall_prox_penalty,
+        hider_min_speed_reward=args.hider_min_speed_reward,
+        seeker_escalating_urgency=args.seeker_escalating_urgency,
+        area_coverage_bonus=args.area_coverage_bonus,
     )
     trainer = ZooTrainer(config, env_config=env_config)
 

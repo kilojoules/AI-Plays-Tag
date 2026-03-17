@@ -29,6 +29,7 @@ class PPOConfig:
     lr: float = 3e-4
     train_iters: int = 80
     target_kl: float = 0.01
+    entropy_coef: float = 0.01
 
 
 class MLP(nn.Module):
@@ -119,7 +120,7 @@ class PPOAgent:
             log_ratio = torch.clamp(logp - logp_old_t, -20.0, 20.0)
             ratio = torch.exp(log_ratio)
             clip_adv = torch.clamp(ratio, 1.0 - self.cfg.clip_ratio, 1.0 + self.cfg.clip_ratio) * adv
-            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean() - 0.01 * entropy.mean()
+            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean() - self.cfg.entropy_coef * entropy.mean()
             loss_v = 0.5 * ((ret - value) ** 2).mean()
             approx_kl = (logp_old_t - logp).mean().item()
             if not (torch.isfinite(loss_pi) and torch.isfinite(loss_v)):

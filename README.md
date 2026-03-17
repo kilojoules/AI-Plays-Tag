@@ -1,6 +1,6 @@
 # AI Plays Tag
 
-**[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
+**[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
 
 **Does training against past opponents make RL agents stronger?**
 
@@ -119,6 +119,15 @@ The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variab
 </p>
 
 The scatter shows no clear trade-off between optimal zoo mixing and forgetting — A* varies widely (5–50%) without a consistent relationship to FR. This suggests that the optimal A is driven more by the game's difficulty structure than by forgetting dynamics.
+
+## Update: Hyperparameter Optimization & Revised A-Sweep
+
+Our [HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/) re-examined the A-parameter hypothesis with Optuna-optimized hyperparameters (200 HPO trials) and a cross-config gauntlet (2,500 matchups). Key findings:
+
+- **Zoo mixing (A) does not produce stronger agents.** A=0 (pure self-play) performs identically to A=1 (full zoo) in cross-evaluation gauntlet.
+- **SAC dominates PPO 95-to-2** in cross-algorithm play, despite appearing to "fail" during training (15% SWR). Training balance is a poor proxy for agent quality.
+- **SAC exhibits massive forgetting** (FR=0.36, every run) but still produces the strongest agents. The self-play oscillation may be beneficial.
+- **Algorithm choice matters more** than zoo parameters, reward presets, or hyperparameter tuning.
 
 ## Experimental Design
 
