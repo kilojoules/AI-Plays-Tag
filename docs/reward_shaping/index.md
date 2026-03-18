@@ -248,6 +248,92 @@ Notable dynamics:
 
 ---
 
-*48 training runs (8 reward presets $\times$ 2 algorithms $\times$ 3 seeds), 5M timesteps each. Cross-evaluated with $16 \times 16 = 256$ matchups $\times$ 20 episodes. Built with custom vectorized NumPy environment and PyTorch PPO/SAC.*
+## Cross-Method Gauntlet
+
+The within-preset gauntlet above answers *which reward function is best?* — but a bigger question remained: **which training method produces the strongest opponents?** We ran experiments across six different training paradigms, each producing agents via different mechanisms:
+
+| Method | Training paradigm | Algorithm | Runs |
+|--------|-------------------|-----------|------|
+| **Selfplay** | Rolling opponent updates | PPO | 20 configs |
+| **Reward shaping** | Self-play + reward presets | PPO, SAC | 8 presets $\times$ 2 algos |
+| **Zoo** | Opponent sampling from checkpoint zoo | PPO | 280 configs |
+| **Zoo + hider shaping** | Zoo with shaped hider rewards | PPO | 200 configs |
+| **FR sweep** | Zoo + reward presets + A-mixing | PPO, SAC | 50 configs |
+| **FR sweep v2** | Optuna-optimized hyperparameters | PPO, SAC | 50 configs |
+
+From 616 total trained agents across 9 method-algorithm combinations, we selected the top 3 representatives per method (most balanced, best seeker, best hider) and ran a full $27 \times 27 = 729$ matchup gauntlet at 50 episodes each.
+
+### Method Head-to-Head
+
+![Cross-Method Comparison](xmethod_comparison.png)
+
+*Left: seeker and hider strength by method. Right: method head-to-head matrix (seeker WR).*
+
+| Method | Seeker | Hider | Combined |
+|--------|-------:|------:|---------:|
+| **FR v2 / SAC** | 72.6% | 89.1% | **80.9%** |
+| **Reward / SAC** | 71.9% | 89.7% | **80.8%** |
+| **FR / SAC** | 71.6% | 84.4% | **78.0%** |
+| Selfplay | 51.6% | 50.5% | 51.0% |
+| Reward / PPO | 47.0% | 45.9% | 46.4% |
+| FR / PPO | 28.2% | 32.0% | 30.1% |
+| Zoo shaped | 24.2% | 35.0% | 29.6% |
+| Zoo | 23.9% | 32.5% | 28.2% |
+| FR v2 / PPO | 17.4% | 32.6% | 25.0% |
+
+The results reveal a stark **two-tier structure**: all three SAC-based methods cluster at 78–81% combined strength, while PPO and zoo methods sit at 25–51%. The algorithm choice (SAC vs PPO) matters far more than the training paradigm (self-play vs zoo vs reward presets).
+
+### Full Gauntlet Heatmap
+
+![Cross-Method Heatmap](xmethod_heatmap.png)
+
+*Each cell: seeker win rate (%). Rows = seeker, columns = hider. Labels colour-coded by method.*
+
+The heatmap shows clear block structure: SAC agents (from any method) dominate PPO/zoo agents with 84–100% win rates. The only competitive matchups occur *within* the SAC tier, where win rates range from 12–70%.
+
+### Showcase: Cross-Method Matchups
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><b>Best Seeker vs Best Hider</b><br>FR v2 Escalating SAC vs FR v2 Both-Shaped SAC<br><em>12% seeker WR — the hider is nearly uncatchable</em></td>
+<td align="center"><b>Perfect Rivals</b><br>FR/SAC Seeker vs Selfplay Hider<br><em>50/50 — knife-edge balance across methods</em></td>
+</tr>
+<tr>
+<td><img src="xmethod_ultimate_showdown.gif" width="350"/></td>
+<td><img src="xmethod_perfect_rivals.gif" width="350"/></td>
+</tr>
+<tr>
+<td align="center"><b>SAC Mirror Match</b><br>Optuna SAC Seeker vs FR SAC Hider<br><em>70% WR — escalating pressure overcomes evasion</em></td>
+<td align="center"><b>Tier Gap: SAC vs Zoo</b><br>Reward/SAC Seeker vs Zoo/PPO Hider<br><em>~98% WR — the zoo hider has no answer</em></td>
+</tr>
+<tr>
+<td><img src="xmethod_sac_mirror.gif" width="350"/></td>
+<td><img src="xmethod_sac_vs_zoo.gif" width="350"/></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><b>Selfplay vs Reward-Shaped</b><br>Selfplay Seeker vs R2 Active Hider (PPO)<br><em>~52% — pure self-play competes with shaped rewards</em></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="xmethod_selfplay_vs_shaped.gif" width="350"/></td>
+</tr>
+</table>
+</div>
+
+### Key Findings
+
+1. **SAC is the dominant factor.** Whether agents trained via self-play, zoo sampling, or reward-preset sweeps, SAC consistently produced stronger agents than PPO. The entropy bonus $\alpha \mathcal{H}[\pi]$ acts as a universal "reward shaping" that cannot be replicated by hand-crafted reward terms.
+
+2. **Zoo training underperforms.** Despite training against diverse opponents (checkpoint zoo with A-parameter mixing), zoo-trained PPO agents placed last. Opponent diversity during training did not translate to stronger final policies — the algorithm ceiling mattered more.
+
+3. **Optuna tuning helps marginally.** FR v2 (Optuna-optimized hyperparameters) edged out the hand-tuned FR sweep for SAC (80.9% vs 78.0%), but the gap is small compared to the PPO/SAC divide.
+
+4. **Selfplay PPO is the best PPO method.** Plain self-play without reward shaping or zoo mechanics achieved 51% combined — the highest among PPO methods. This suggests that for PPO, simpler training setups avoid overfitting to specific reward incentives.
+
+5. **The toughest opponents are both SAC.** The hardest seeker to evade: **FR v2 R5 Escalating SAC** (77% WR). The hardest hider to catch: **FR v2 R3 Both-Shaped SAC** (93% survival). Both emerged from Optuna-tuned zoo training with reward presets.
+
+---
+
+*616 agents across 6 training methods, 9 method-algorithm combinations. Top-3 per method selected by training balance, yielding $27 \times 27 = 729$ cross-evaluation matchups at 50 episodes each. Built with custom vectorized NumPy environment and PyTorch PPO/SAC.*
 
 *[View source code](https://github.com/kilojoules/AI-Plays-Tag)*
