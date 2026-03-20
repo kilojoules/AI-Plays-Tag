@@ -7,10 +7,9 @@
 In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+39 pp on average) in the hardest games.**
 
 <p align="center">
-  <img src="docs/reward_shaping/xmethod_ultimate_showdown.gif" alt="Best Seeker vs Best Hider: FR v2 Escalating SAC seeker vs FR v2 Both-Shaped SAC hider" width="480">
+  <img src="docs/header_animation.gif" alt="Best seeker vs best hider: 10-round showcase of SAC agents trained via Optuna-optimized zoo training" width="480">
   <br>
-  <em>Best Seeker vs Best Hider (both SAC). FR v2 Escalating SAC seeker vs FR v2 Both-Shaped SAC hider.<br>
-  12% seeker WR — the hider is nearly uncatchable.</em>
+  <em>The project's strongest seeker (FR v2 R5 Escalating SAC, 77% win rate) vs strongest hider (FR v2 R3 Both-Shaped SAC, 93% survival rate) — 10 rounds with live score. Both agents emerged from Optuna-optimized zoo training with reward shaping. Four_corners arena, HSM=1.15.</em>
 </p>
 
 ## The Game
