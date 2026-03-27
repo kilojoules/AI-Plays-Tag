@@ -265,9 +265,22 @@ From 616 total trained agents across 9 method-algorithm combinations, we selecte
 
 ### Method Head-to-Head
 
-![Cross-Method Comparison](xmethod_comparison.png)
+The 9 method-algorithm combinations are aggregated into a single heatmap. Each cell averages across all seeker-hider pairs between two methods (3 seekers $\times$ 3 hiders = 9 matchups per cell, 50 episodes each):
 
-*Left: seeker and hider strength by method. Right: method head-to-head matrix (seeker WR).*
+![Method Head-to-Head Heatmap](xmethod_h2h_heatmap.png)
+
+*Seeker win rate (%) aggregated by training method. Rows = seeker's method, columns = hider's method. Black lines separate the three performance tiers. Green = seeker dominates, red = hider survives.*
+
+The heatmap reveals a stark **three-tier structure**:
+- **SAC tier** (top-left 3$\times$3 block): SAC methods only struggle against *each other*, with win rates of 25–40%. Against everything else, they achieve 84–100%.
+- **Mid tier** (selfplay, reward/PPO): Competitive against PPO/zoo methods but helpless against SAC hiders (7–18% WR).
+- **PPO/Zoo tier** (bottom-right): Zoo and FR/PPO agents rarely win against anyone outside their own tier.
+
+### Agent Strength
+
+![Strength Bars](xmethod_strength.png)
+
+*Seeker strength = mean win rate as seeker across all 27 hiders. Hider strength = mean survival rate across all 27 seekers. Combined = average of both.*
 
 | Method | Seeker | Hider | Combined |
 |--------|-------:|------:|---------:|
@@ -281,15 +294,15 @@ From 616 total trained agents across 9 method-algorithm combinations, we selecte
 | Zoo | 23.9% | 32.5% | 28.2% |
 | FR v2 / PPO | 17.4% | 32.6% | 25.0% |
 
-The results reveal a stark **two-tier structure**: all three SAC-based methods cluster at 78–81% combined strength, while PPO and zoo methods sit at 25–51%. The algorithm choice (SAC vs PPO) matters far more than the training paradigm (self-play vs zoo vs reward presets).
+### Full Agent-Level Heatmap
 
-### Full Gauntlet Heatmap
+Drilling down from the 9$\times$9 method summary into the individual agents — all 27 representatives grouped by method:
 
-![Cross-Method Heatmap](xmethod_heatmap.png)
+![Full Heatmap](xmethod_full_heatmap.png)
 
-*Each cell: seeker win rate (%). Rows = seeker, columns = hider. Labels colour-coded by method.*
+*All $27 \times 27 = 729$ matchups. Agents grouped by method (thin lines) and tier (thick lines). Tick labels colour-coded by method. Each cell = 50 episodes.*
 
-The heatmap shows clear block structure: SAC agents (from any method) dominate PPO/zoo agents with 84–100% win rates. The only competitive matchups occur *within* the SAC tier, where win rates range from 12–70%.
+The block structure from the method heatmap holds at the individual agent level: every SAC agent beats every PPO/zoo agent. Within the SAC tier, performance varies by reward preset and training config — the R5 Escalating seeker and R3 Both-Shaped hider consistently stand out.
 
 ### Showcase: Cross-Method Matchups
 
