@@ -1,263 +1,181 @@
 # AI Plays Tag
 
-**[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
-
-**Does training against past opponents make RL agents stronger?**
-
-In self-play, agents often *forget* how to beat earlier strategies as they co-adapt with their current opponent. We investigate whether mixing in past opponents from a "zoo" of archived checkpoints can fix this — and find that **zoo training improved the seeker's win rate in all 20 game configurations, with the largest gains (+39 pp on average) in the hardest games.**
-
 <p align="center">
-  <img src="docs/header_animation.gif" alt="Best seeker vs best hider: 10-round showcase of SAC agents trained via Optuna-optimized zoo training" width="480">
+  <img src="docs/header_animation.gif" alt="Best seeker vs best hider: 10 rounds of SAC agents from Optuna-optimized zoo training" width="480">
   <br>
-  <em>The project's strongest seeker (FR v2 R5 Escalating SAC, 77% win rate) vs strongest hider (FR v2 R3 Both-Shaped SAC, 93% survival rate) — 10 rounds with live score. Both agents emerged from Optuna-optimized zoo training with reward shaping. Four_corners arena, HSM=1.15.</em>
+  <em>The strongest seeker vs the strongest hider from 616 trained agents — 10 rounds with live score.<br>
+  Both are SAC agents from Optuna-optimized zoo training with reward shaping.</em>
 </p>
+
+Two RL agents learn to play tag in a 2D arena with obstacles. The **seeker** (red) tries to catch the **hider** (blue) before time runs out. We train agents with PPO and SAC across multiple paradigms — self-play, zoo training, reward shaping — and pit them against each other to find what actually matters.
+
+**The big finding: algorithm choice (SAC vs PPO) dominates everything else.** Zoo mixing, reward presets, hyperparameter tuning — none of it closes the gap.
+
+**[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
+
+---
 
 ## The Game
 
-Two agents compete in a bounded 2D arena with obstacles:
+A 30x30 arena with 4 obstacles and a central safe zone. Each agent observes position, velocity, the opponent's relative state, and **36 vision rays** (120 FOV). Actions are continuous 2D accelerations. Episodes last 200 steps; the hider has a speed advantage (up to 20% faster).
 
-- **Seeker** (red) tries to catch the hider by closing within tagging distance
-- **Hider** (blue) tries to survive until the time limit (200 steps)
-- The arena contains rectangular obstacles that block movement and a central safe zone
+Two parameters control difficulty:
 
-Each agent observes its own position/velocity, the opponent's relative position, and **36 vision rays** that detect walls, obstacles, and the other agent. Actions are continuous 2D accelerations.
+| Parameter | Effect |
+|---|---|
+| **Seeker Time Penalty (STP)** | Per-step cost on the seeker — higher = more pressure to tag quickly |
+| **Hider Speed Multiplier (HSM)** | Hider speed relative to seeker — above 1.0 = the hider is faster |
 
-Two parameters control game difficulty:
+---
 
-| Parameter | Symbol | Effect |
-|---|---|---|
-| Seeker Time Penalty | **STP** | Per-step reward cost on the seeker — higher means more pressure to tag quickly |
-| Hider Speed Multiplier | **HSM** | Hider speed relative to seeker — above 1.0 means the hider is faster |
+## The A-Parameter Hypothesis
 
-We sweep 4 STP values (0.005, 0.01, 0.02, 0.05) and 5 HSM values (1.0, 1.05, 1.10, 1.15, 1.20) for **20 game configurations** ranging from easy to hard.
-
-## The A Parameter
-
-The **A parameter** controls how often an agent trains against historical opponents from a "zoo" of archived checkpoints versus the latest opponent:
-
-- **A = 0 (self-play)**: Always train against the latest opponent. No zoo. Use `train_selfplay.py`.
-- **A in (0, 1) (zoo training)**: Each rollout samples a past opponent from the zoo with probability A, or plays the latest opponent with probability 1 − A.
-- **A near 1**: Almost always sample from the zoo. Approaches Synthetic Self-Play (SSP).
-- **A >= 1**: Invalid / not meaningful.
-
-The command-line flag `--latest-prob` is the complement: `latest_prob = 1 − A`. This is a legacy naming convention.
-
-**Arms Race** is a separate concept (not a value of A): sequential iteration where protagonist *n* trains only against adversary *n*−1 and each generation discards all prior opponents. See [adversarial self-play for wind farm control](https://julianquick.com/ML/adversarial.html) for a comparison of Arms Race, SSP, and Self-Play topologies.
-
-### When does zoo sampling help?
-
-Zoo sampling helps when **catastrophic forgetting** is present — when past adversaries perform better against later protagonists than later adversaries do. The structural test: does Nash equilibrium coincide with the best response to weak/random opponents? If yes, zoo helps. If no, zoo hurts.
-
-| Game | Forgetting? | Zoo helps? | A* | Why |
-|------|:-----------:|:----------:|:--:|-----|
-| [RPS](https://github.com/kilojoules/RPS_RL) | Cycling (not forgetting) | Yes | 0.05–0.9 (dynamic) | Nash *is* best response to any mix; zoo breaks co-adaptation cycles |
-| [Kuhn Poker](https://github.com/kilojoules/Kuhn-Poker-RL) | Absent | No | 0 (self-play) | Best response to random is exploitative, not Nash; zoo reinforces bad habits |
-| **Tag** (this repo) | Present | **Yes** | Config-dependent | Hard games show real skill regression; zoo provides corrective curriculum |
-| [LLM Red Teaming](https://github.com/kilojoules/REDKWEEN) | Open question | Open question | Untested | Defense dominates in self-play; zoo may help adversary diversity |
-
-## The Research Question
-
-In standard self-play, both agents train exclusively against each other's latest policy. This is efficient but fragile: the seeker can overfit to the current hider's strategy and lose the ability to beat earlier ones — a phenomenon called *catastrophic forgetting*.
+In standard self-play, both agents train against each other's latest policy. This is efficient but fragile — the seeker can overfit to the current hider and forget how to beat earlier strategies (*catastrophic forgetting*).
 
 **Zoo training** offers an alternative. The seeker maintains a "zoo" of archived hider checkpoints and trains against a mixture:
 
-- **A%** of rollouts: play against a randomly sampled **past hider** from the zoo
-- **(1-A)%** of rollouts: play against the **latest hider** (self-play)
+- With probability **A**: play against a randomly sampled **past hider** from the zoo
+- With probability **1-A**: play against the **latest hider** (self-play)
 
-The central question: **does zoo training actually help, and when does it help most?**
+We hypothesized that zoo mixing would reduce forgetting and produce stronger agents. We tested this across multiple games:
 
-## The A Parameter
+| Game | Forgetting? | Zoo helps? | Why |
+|------|:-----------:|:----------:|-----|
+| [RPS](https://github.com/kilojoules/RPS_RL) | Cycling | Yes | Nash *is* best response to any mix; zoo breaks co-adaptation |
+| [Kuhn Poker](https://github.com/kilojoules/Kuhn-Poker-RL) | Absent | No | Best response to random is exploitative, not Nash |
+| **Tag** (this repo) | Present | **Complicated** | Zoo helps PPO within-run, but the effect vanishes in cross-evaluation |
 
-The zoo mixing rate **A** controls how often the seeker trains against past opponents vs. the current one. At A=5% (near-pure self-play), almost all training is against the latest hider. At A=50%, half of all rollouts use a randomly sampled past hider from the zoo.
+### Initial result: zoo helps (PPO, within-run evaluation)
 
-Higher A increases opponent diversity but reduces exposure to the latest (and presumably strongest) hider strategy. The optimal A depends on the game — harder games tend to benefit from more diversity, while easy games see little effect.
-
-We sweep A across 5%, 10%, 20%, 30%, and 50% for each of the 20 game configurations.
-
-## Key Finding: Zoo Helps Most in Hard Games
-
-<p align="center">
-  <img src="experiments/results/zoo_hider_shaped/zoo_improvement_summary.png" alt="Zoo training helps most in hard games" width="600">
-</p>
-
-We compared the best zoo configuration (A > 5%) against a near-pure self-play baseline (A = 5%) for each of the 20 game configs:
-
-- **Zoo helped in 20/20 configs** and hurt in 0/20
-- **Hard games** (baseline win rate < 70%): zoo improved win rate by **+39.1 pp** on average across all 17 configs
-- **Medium games** (baseline 70–90%): **+16.9 pp** across 3 configs
+With PPO and default hyperparameters, zoo training improved seeker win rate in **20/20 game configs**, with the largest gains (+39 pp average) in the hardest games:
 
 <p align="center">
-  <img src="experiments/results/zoo_hider_shaped/zoo_improvement_by_difficulty.png" alt="Zoo improvement per config, sorted by magnitude" width="900">
-  <br>
-  <em>Win rate improvement for each game config (best zoo A vs. A=5% baseline), sorted by magnitude.<br>
-  Labels show which A% was optimal. Win rates measured via gauntlet evaluation (20 episodes per matchup). Error bars = SE across 3 training seeds.</em>
+  <img src="experiments/results/zoo_hider_shaped/zoo_improvement_summary.png" alt="Zoo training helps most in hard games" width="500">
 </p>
 
-The interpretation: in hard games, pure self-play gets stuck in co-adaptation cycles where the seeker overfits to the current hider. Training against diverse past hiders breaks this cycle. With hider reward shaping (distance-change incentives), the hider learns stronger evasion, making games harder overall — which amplifies the benefit of zoo training.
+### Revised result: zoo doesn't actually matter
 
-## Detailed Results
+When we [re-evaluated with Optuna-optimized hyperparameters](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/) and cross-config gauntlet testing (agents playing opponents they *didn't* train against), the zoo effect disappeared:
 
-### Win Rate vs. Zoo Mixing Rate
+- **A=0 (pure self-play) performs identically to A=1 (full zoo)** in cross-evaluation
+- **SAC dominates PPO 95-to-2** in cross-algorithm play, regardless of A
+- SAC exhibits massive forgetting (FR=0.36) but still produces the strongest agents
+
+The initial zoo improvement was an artifact of within-run evaluation — the zoo helped the seeker beat *its own* hider, but not arbitrary opponents.
+
+---
+
+## Cross-Method Gauntlet
+
+To settle which training method produces the best opponents, we ran a [cross-method gauntlet](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/#cross-method-gauntlet): 616 agents from 6 training paradigms, top 3 per method selected, 27x27 all-vs-all evaluation:
 
 <p align="center">
-  <img src="experiments/results/zoo_hider_shaped/seeker_wr_vs_A.png" alt="Seeker win rate vs A across 20 game configurations" width="900">
-  <br>
-  <em>Seeker win rate vs. A for each game config. Rows = STP, columns = HSM.<br>
-  Cyan = uniform sampling, pink = Thompson-loss sampling. Win rates from gauntlet evaluation (final seeker vs. final hider, 20 episodes). Error bars = SE across 3 training seeds.</em>
+  <img src="docs/reward_shaping/xmethod_h2h_heatmap.png" alt="Cross-method gauntlet heatmap" width="600">
 </p>
 
-No single A value dominates — the optimal zoo fraction varies by game. Thompson-loss sampling (which prioritizes opponents that beat the agent) edges out uniform sampling slightly, winning in 11/20 configs.
+| Method | Seeker | Hider | Combined |
+|--------|-------:|------:|---------:|
+| **FR v2 / SAC** | 72.6% | 89.1% | **80.9%** |
+| **Reward / SAC** | 71.9% | 89.7% | **80.8%** |
+| **FR / SAC** | 71.6% | 84.4% | **78.0%** |
+| Selfplay / PPO | 51.6% | 50.5% | 51.0% |
+| Reward / PPO | 47.0% | 45.9% | 46.4% |
+| Zoo / PPO | 23.9% | 32.5% | 28.2% |
 
-### Forgetting Regret
+SAC methods cluster at 78-81% combined strength. All PPO and zoo methods sit below 51%. The training paradigm (self-play, zoo, reward presets) barely matters compared to the algorithm choice.
 
-We measure forgetting with the **Forgetting Regret (FR)** metric. For each training run, we pit every saved seeker checkpoint against every saved hider checkpoint in a round-robin gauntlet, producing a win-rate matrix W where W[i,j] is the win rate of seeker checkpoint i against hider checkpoint j.
+---
 
-<p align="center">
-  <img src="experiments/results/zoo_hider_shaped/fr_heatmap_examples.png" alt="Win-rate matrix heatmaps showing high vs low forgetting" width="900">
-  <br>
-  <em>Win-rate matrices from two runs. Left: high forgetting — the seeker learns to beat early hiders (green top-left) but loses that ability later (red bottom-left). Right: low forgetting — the seeker maintains high win rates across all hider checkpoints. Each cell = 20 eval episodes.</em>
-</p>
+## Reward Shaping
 
-FR captures how much the seeker has regressed from its historical peak against each hider:
+The [reward shaping study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/) tested 8 reward presets across PPO and SAC (48 training runs, 5M timesteps each):
 
-```
-FR = mean( running_max(W[k,j] for k <= i) - W[i,j] )
-```
+- **Sparse rewards fail for PPO** but SAC's entropy bonus compensates — R4 Sparse PPO is the worst agent (7%), R4 Sparse SAC is the best hider (87% survival)
+- **Anti-degenerate shaping matters most** — wall proximity penalties and speed bonuses prevent corner camping more effectively than increasing reward magnitude
+- **Escalating time pressure** (R5) creates the most dynamic pursuit behavior
+- **Kitchen sink is not optimal** — combining all shaping terms creates conflicting gradients
 
-<p align="center">
-  <img src="experiments/results/zoo_hider_shaped/gauntlet/fr_vs_A.png" alt="Forgetting Regret vs A" width="900">
-  <br>
-  <em>Forgetting Regret vs. A across game configs. Computed from checkpoint gauntlet (13 subsampled checkpoints, 20 eval episodes per matchup). Error bars = SE across 3 training seeds.</em>
-</p>
+<div align="center">
+<table>
+<tr>
+<td align="center"><b>R0 Baseline (PPO)</b><br>No shaping = passive play</td>
+<td align="center"><b>R5 Escalating (SAC)</b><br>Dynamic pursuit with urgency</td>
+</tr>
+<tr>
+<td><img src="docs/reward_shaping/bad_R0_baseline.gif" width="300"/></td>
+<td><img src="docs/reward_shaping/hero_R5_escalating.gif" width="300"/></td>
+</tr>
+</table>
+</div>
 
-The hard games (top rows, STP = 0.005 and 0.01) show the highest and most variable forgetting. Easy games (bottom rows) have FR near zero regardless of A. Interestingly, higher A does not consistently reduce FR — the relationship is noisy and game-dependent.
-
-### Optimal A vs. Forgetting Regret
-
-<p align="center">
-  <img src="experiments/results/zoo_hider_shaped/astar_vs_fr.png" alt="Optimal A* vs Forgetting Regret" width="600">
-  <br>
-  <em>Each point is one game config, plotted at its optimal zoo fraction (A*) and the corresponding forgetting regret. Color indicates baseline difficulty. Gauntlet evaluation (20 episodes per matchup), error bars = SE across 3 training seeds.</em>
-</p>
-
-The scatter shows no clear trade-off between optimal zoo mixing and forgetting — A* varies widely (5–50%) without a consistent relationship to FR. This suggests that the optimal A is driven more by the game's difficulty structure than by forgetting dynamics.
-
-## Update: Hyperparameter Optimization & Revised A-Sweep
-
-Our [HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/) re-examined the A-parameter hypothesis with Optuna-optimized hyperparameters (200 HPO trials) and a cross-config gauntlet (2,500 matchups). Key findings:
-
-- **Zoo mixing (A) does not produce stronger agents.** A=0 (pure self-play) performs identically to A=1 (full zoo) in cross-evaluation gauntlet.
-- **SAC dominates PPO 95-to-2** in cross-algorithm play, despite appearing to "fail" during training (15% SWR). Training balance is a poor proxy for agent quality.
-- **SAC exhibits massive forgetting** (FR=0.36, every run) but still produces the strongest agents. The self-play oscillation may be beneficial.
-- **Algorithm choice matters more** than zoo parameters, reward presets, or hyperparameter tuning.
-
-## Experimental Design
-
-The full sweep covers **600 training runs**:
-
-```
-20 game configs  (4 STP x 5 HSM)
- x 5 A values   (5%, 10%, 20%, 30%, 50%)
- x 2 sampling   (uniform, thompson_loss)
- x 3 seeds
- = 600 runs @ 10M timesteps each
-```
-
-The hider receives additional reward shaping: a distance-change reward (`hider_dist_reward=0.14`) and an absolute-distance reward (`hider_abs_dist_reward=0.1`) that encourage active evasion rather than passive hiding.
-
-All runs use the `four_corners` arena layout. The seeker trains against a hider zoo; the hider always faces the latest seeker. When sampling from the zoo, we compare two strategies:
-
-- **Uniform**: select a past checkpoint uniformly at random
-- **Thompson-loss**: Thompson Sampling biased toward opponents that *beat* the current agent
-
-## Project Structure
-
-```
-trainer/
-  tag_env.py              Vectorized 2D tag environment (3000+ steps/sec)
-  ppo.py                  PPO agent with MLP policy/value networks
-  train_zoo.py            Zoo-based population training
-  train_selfplay.py       Pure self-play baseline
-
-experiments/
-  zoo_hider_shaped_tasks.py      A-sweep SLURM task generator (hider-shaped)
-  zoo_hider_shaped_gauntlet.py   Checkpoint gauntlet + forgetting regret
-  plot_zoo_hider_shaped.py       Generate all README plots
-  animate_zoo_sweep.py           Episode animation generator
-  checkpoint_gauntlet.py         Cross-checkpoint evaluation
-```
+---
 
 ## Quick Start
 
-### Prerequisites
-
-Install [Pixi](https://pixi.sh) (manages Python 3.11 + PyTorch + all dependencies):
+Install [Pixi](https://pixi.sh), then:
 
 ```bash
 pixi install
-```
 
-### Train a zoo agent
+# Self-play training (1M steps, ~5 min)
+pixi run python trainer/train_selfplay.py --timesteps 1000000 --layout four_corners
 
-```bash
-# Quick test (100K steps, ~30 seconds)
-pixi run python trainer/train_zoo.py --timesteps 100000
-
-# Full training (10M steps, ~3 hours on CPU)
+# Zoo training (10M steps, ~3 hours)
 pixi run python trainer/train_zoo.py \
   --timesteps 10000000 \
   --latest-prob 0.7 \
   --sampling-strategy thompson_loss \
-  --layout four_corners \
-  --output-dir runs/my_experiment
+  --layout four_corners
+
+# SAC self-play
+pixi run python trainer/train_selfplay_sac.py --timesteps 5000000 --layout four_corners
 ```
 
 Key arguments:
 - `--latest-prob P`: probability of playing latest opponent (A = 1 - P)
 - `--sampling-strategy {uniform,thompson,thompson_loss}`: zoo sampling method
-- `--seeker-time-penalty`: per-step seeker penalty (e.g. -0.05)
 - `--hider-speed-mult`: hider speed relative to seeker (e.g. 1.15)
 - `--layout {empty,four_corners,central_cross,playground}`: arena layout
 
-### Train with pure self-play
+## Project Structure
 
-```bash
-pixi run python trainer/train_selfplay.py --timesteps 1000000 --layout four_corners
+```
+trainer/
+  tag_env.py              Vectorized 2D tag environment (NumPy, 3000+ steps/sec)
+  ppo.py / sac.py         PPO and SAC agents (PyTorch)
+  train_selfplay.py       Self-play training (PPO)
+  train_selfplay_sac.py   Self-play training (SAC)
+  train_zoo.py            Zoo-based training (PPO)
+  train_zoo_sac.py        Zoo-based training (SAC)
+
+experiments/
+  reward_presets.py        8 named reward configurations (R0-R7)
+  cross_method_gauntlet.py Cross-method evaluation (616 agents, 9 methods)
+  reward_gauntlet.py       Within-preset cross-evaluation
+  plot_cross_method.py     Generate gauntlet heatmaps and strength plots
+  fr_sweep_tasks.py        SLURM task generators for large sweeps
 ```
 
-### Reproduce the full sweep (SLURM)
+## Total Compute
 
-```bash
-sbatch run_zoo_hider_shaped.sh              # training sweep (600 tasks)
-sbatch run_zoo_hider_shaped_gauntlet.sh     # forgetting regret gauntlets (200 tasks)
-pixi run python experiments/plot_zoo_hider_shaped.py  # generate all plots
-```
+Over 1,500 training runs across all experiments:
 
-## Technical Details
+| Experiment | Runs | Steps each | Total |
+|-----------|-----:|----------:|------:|
+| Zoo A-sweep | 600 | 10M | 6B |
+| Self-play sweep | 20 | 10M | 200M |
+| Reward shaping | 48 | 5M | 240M |
+| FR sweep (v1 + v2) | 300 | 5M | 1.5B |
+| HPO (Optuna) | 200 | 1M | 200M |
 
-### Environment
-- **Arena**: 30x30 bounded area with configurable obstacle layouts
-- **Observations**: position, velocity, role flags, 36 vision rays, safe zone state
-- **Actions**: continuous 2D acceleration, clamped to [-1, 1]
-- **Vectorized**: NumPy-batched across 64 parallel environments
-
-### Training
-- **Algorithm**: PPO with clipped surrogate objective
-- **Networks**: 2-layer MLP (128 hidden, Tanh), separate policy and value heads
-- **Two-phase rollout**: each update collects on-policy data for one role; the opponent uses a sampled zoo/latest policy
-- **Hider zoo**: up to 50 archived checkpoints, updated every 50 training iterations
-
-### Metrics
-Training logs to CSV: seeker/hider rewards, win rates, episode lengths, policy/value losses, zoo sizes, and sampling rates. Forgetting regret computed via checkpoint gauntlets (20 eval episodes per matchup, 13 subsampled checkpoints).
+All evaluated via cross-config gauntlets (20-50 episodes per matchup).
 
 ## Related Projects
 
-This experiment is part of a series investigating zoo sampling and gauntlet-style evaluation across different games:
-
-- **[RPS_RL](https://github.com/kilojoules/RPS_RL)** — Cheap testbed using Rock-Paper-Scissors. Zoo sampling breaks co-adaptation cycles and PPO benefits more than buffered agents, but heavy zoo degrades over time. Establishes the A-parameter hypothesis.
-- **[Kuhn-Poker-RL](https://github.com/kilojoules/Kuhn-Poker-RL)** — Negative result: every RPS finding inverts in Kuhn Poker. Zoo sampling *hurts* because the best response to weak opponents is exploitative, not Nash. Reveals the catastrophic forgetting prerequisite.
-- **[REDKWEEN](https://github.com/kilojoules/REDKWEEN)** — Automated LLM red teaming via self-play. A 1B adversary discovers real jailbreak strategies, but defense always wins in self-play. Zoo sampling for adversary diversity is an open question.
-- **[Adversarial Self-Play for Wind Farm Control](https://julianquick.com/ML/adversarial.html)** — The original motivation: comparing Arms Race, SSP, and Self-Play training topologies for robust wind farm controllers.
+- **[RPS_RL](https://github.com/kilojoules/RPS_RL)** — Rock-Paper-Scissors testbed. Zoo sampling breaks co-adaptation cycles. Establishes the A-parameter hypothesis.
+- **[Kuhn-Poker-RL](https://github.com/kilojoules/Kuhn-Poker-RL)** — Negative result: zoo sampling *hurts* in Kuhn Poker because the best response to weak opponents is exploitative, not Nash.
+- **[REDKWEEN](https://github.com/kilojoules/REDKWEEN)** — Automated LLM red teaming via self-play. Zoo sampling for adversary diversity is an open question.
+- **[Adversarial Self-Play for Wind Farm Control](https://julianquick.com/ML/adversarial.html)** — The original motivation: comparing training topologies for robust controllers.
 
 ## License
 
