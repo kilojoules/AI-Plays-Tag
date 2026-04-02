@@ -31,7 +31,9 @@ class SelfPlaySACTrainer:
                  env_config: Optional[TagEnvConfig] = None,
                  buffer_size: int = 500_000, batch_size: int = 256,
                  warmup_steps: int = 10_000, updates_per_step: int = 1,
-                 lr: float = 3e-4, log_interval: int = 1000,
+                 lr: float = 3e-4, init_alpha: float = 0.2,
+                 fixed_alpha: float = None,
+                 log_interval: int = 1000,
                  save_interval: int = 50_000, output_dir: str = "experiments/results/selfplay_sac"):
         self.num_envs = num_envs
         self.total_timesteps = total_timesteps
@@ -48,7 +50,9 @@ class SelfPlaySACTrainer:
         sac_cfg = SACConfig(obs_dim=obs_dim, act_dim=act_dim,
                             buffer_size=buffer_size, batch_size=batch_size,
                             warmup_steps=warmup_steps, actor_lr=lr,
-                            critic_lr=lr, alpha_lr=lr)
+                            critic_lr=lr, alpha_lr=lr,
+                            init_alpha=init_alpha,
+                            fixed_alpha=fixed_alpha)
 
         self.agents = {
             'seeker': SACAgent(sac_cfg),
@@ -271,6 +275,9 @@ def main():
     parser.add_argument("--hider-min-speed-reward", type=float, default=0.0)
     parser.add_argument("--seeker-escalating-urgency", action="store_true")
     parser.add_argument("--area-coverage-bonus", type=float, default=0.0)
+    parser.add_argument("--fixed-alpha", type=float, default=None,
+                        help="Fix entropy coefficient (disable auto-tuning). Use 0.0 for no-entropy ablation.")
+    parser.add_argument("--init-alpha", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=5000)
     parser.add_argument("--save-interval", type=int, default=100_000)
@@ -305,6 +312,8 @@ def main():
         warmup_steps=args.warmup_steps,
         updates_per_step=args.updates_per_step,
         lr=args.lr,
+        init_alpha=args.init_alpha,
+        fixed_alpha=args.fixed_alpha,
         log_interval=args.log_interval,
         save_interval=args.save_interval,
         output_dir=args.output_dir,

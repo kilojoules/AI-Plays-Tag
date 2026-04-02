@@ -32,6 +32,7 @@ class SACConfig:
     gamma: float = 0.99
     tau: float = 0.005
     init_alpha: float = 0.2
+    fixed_alpha: float = None  # When set, disable auto-tuning and use this value
     buffer_size: int = 500_000
     batch_size: int = 256
     warmup_steps: int = 10_000
@@ -181,14 +182,16 @@ class SACAgent:
         for p in self.critic_target.parameters():
             p.requires_grad = False
 
-        # Automatic entropy tuning
+        # Entropy tuning
         self.target_entropy = -float(cfg.act_dim)
-        self.log_alpha = torch.tensor(np.log(cfg.init_alpha), requires_grad=True)
+        self._fixed_alpha = cfg.fixed_alpha
+        init_val = cfg.fixed_alpha if cfg.fixed_alpha is not None else cfg.init_alpha
+        self.log_alpha = torch.tensor(np.log(max(init_val, 1e-8)), requires_grad=(cfg.fixed_alpha is None))
 
         # Optimizers
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=cfg.actor_lr)
         self.critic_opt = optim.Adam(self.critic.parameters(), lr=cfg.critic_lr)
-        self.alpha_opt = optim.Adam([self.log_alpha], lr=cfg.alpha_lr)
+        self.alpha_opt = optim.Adam([self.log_alpha], lr=cfg.alpha_lr) if cfg.fixed_alpha is None else None
 
     @property
     def alpha(self) -> float:
@@ -251,11 +254,13 @@ class SACAgent:
         self.actor_opt.step()
 
         # --- Alpha (entropy temperature) update ---
-        alpha_loss = -(self.log_alpha * (log_probs.detach() + self.target_entropy)).mean()
-
-        self.alpha_opt.zero_grad()
-        alpha_loss.backward()
-        self.alpha_opt.step()
+        if self._fixed_alpha is None:
+            alpha_loss = -(self.log_alpha * (log_probs.detach() + self.target_entropy)).mean()
+            self.alpha_opt.zero_grad()
+            alpha_loss.backward()
+            self.alpha_opt.step()
+        else:
+            alpha_loss = torch.tensor(0.0)
 
         # --- Soft target update ---
         with torch.no_grad():
@@ -273,7 +278,7 @@ class SACAgent:
         }
 
     def save_policy(self, path: str):
-        torch.save({
+        state = {
             'type': 'sac',
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
@@ -281,13 +286,15 @@ class SACAgent:
             'log_alpha': self.log_alpha.detach().cpu(),
             'actor_opt': self.actor_opt.state_dict(),
             'critic_opt': self.critic_opt.state_dict(),
-            'alpha_opt': self.alpha_opt.state_dict(),
             'config': {
                 'obs_dim': self.cfg.obs_dim,
                 'act_dim': self.cfg.act_dim,
                 'hidden_dim': self.cfg.hidden_dim,
             },
-        }, path)
+        }
+        if self.alpha_opt is not None:
+            state['alpha_opt'] = self.alpha_opt.state_dict()
+        torch.save(state, path)
 
     def load_policy(self, path: str):
         state = torch.load(path, map_location="cpu")
