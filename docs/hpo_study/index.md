@@ -163,4 +163,10 @@ SAC agents reach near-perfect balance (peak ~0.50) within the first 1–2M steps
 
 *150 training runs (5 presets × 2 algorithms × 5 A values × 3 seeds) at 5M steps each, with Optuna-optimized hyperparameters (200 HPO trials). Cross-evaluated with 2,500 gauntlet matchups × 50 episodes. Built with custom vectorized NumPy environment and PyTorch PPO/SAC.*
 
+> **Why does SAC dominate?** The [entropy temperature ablation](../entropy_study/) tests the natural hypothesis that SAC's entropy bonus is the key mechanism. The answer is nuanced: auto-tuned entropy decays to near-zero within 500K steps. What matters is a brief high-entropy bootstrapping phase — and fixed entropy is catastrophically worse than no entropy at all.
+
+---
+
+**Study series:** [Reward Shaping](../reward_shaping/) | HPO & Zoo Mixing (this page) | [Entropy Ablation](../entropy_study/)
+
 *[View source code](https://github.com/kilojoules/AI-Plays-Tag)*

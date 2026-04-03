@@ -349,4 +349,10 @@ The block structure from the method heatmap holds at the individual agent level:
 
 *616 agents across 6 training methods, 9 method-algorithm combinations. Top-3 per method selected by training balance, yielding $27 \times 27 = 729$ cross-evaluation matchups at 50 episodes each. Built with custom vectorized NumPy environment and PyTorch PPO/SAC.*
 
+> **What makes SAC dominant?** The [entropy temperature ablation](../entropy_study/) investigates the mechanism. Surprisingly, SAC's entropy bonus decays to near-zero within the first 10% of training — the advantage comes from a brief exploration phase, not sustained entropy. Fixed entropy is catastrophically worse than no entropy at all.
+
+---
+
+**Study series:** Reward Shaping (this page) | [HPO & Zoo Mixing](../hpo_study/) | [Entropy Ablation](../entropy_study/)
+
 *[View source code](https://github.com/kilojoules/AI-Plays-Tag)*

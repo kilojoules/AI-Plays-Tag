@@ -7,19 +7,37 @@ title: Entropy Temperature Ablation
 
 *Why SAC dominates competitive tag — and why a fixed entropy coefficient destroys learning.*
 
+> **This is the third study in a series.** The [reward shaping study](../reward_shaping/) established that SAC produces stronger agents than PPO across 8 reward presets. The [HPO & zoo mixing study](../hpo_study/) confirmed this with optimized hyperparameters: SAC beats PPO 95-to-2 in cross-algorithm play, and zoo training has no effect. This study asks *why* SAC dominates.
+
 ---
 
-## Motivation
+## Background
 
-Our [prior studies](../reward_shaping/) showed that SAC dominates PPO 95-to-2 in cross-algorithm play, regardless of reward shaping or zoo training. The natural hypothesis: SAC's entropy bonus acts as implicit reward shaping, encouraging diverse behavior that prevents degenerate strategies like corner-camping.
+**SAC** (Soft Actor-Critic) is an off-policy RL algorithm that adds an entropy bonus to the reward: the agent is incentivized to act *randomly* in addition to maximizing reward. The strength of this bonus is controlled by a temperature parameter **alpha**. Standard SAC auto-tunes alpha to maintain a target entropy level. **PPO** (Proximal Policy Optimization) is on-policy and has no such entropy mechanism (beyond a small fixed coefficient).
+
+Our prior studies showed SAC dominates PPO [95-to-2 in cross-algorithm play](../hpo_study/#cross-algorithm-comparison), regardless of [reward shaping](../reward_shaping/), [zoo training](../hpo_study/#the-a-parameter-has-no-effect), or hyperparameter optimization. The natural hypothesis: SAC's entropy bonus acts as implicit reward shaping, encouraging diverse behavior that prevents degenerate strategies like corner-camping.
 
 But is entropy actually the mechanism? This study tests that directly.
 
 ---
 
+## Setup
+
+All experiments use the same environment and evaluation methodology as the prior studies:
+
+- **Arena:** 30x30 with 4 corner obstacles ("four_corners" layout). The **hider is 15% faster** than the seeker (HSM=1.15).
+- **Observations:** 87-dimensional vectors including position, velocity, and 36 vision rays.
+- **Episodes:** 200 action steps (10 seconds). The seeker wins by tagging (getting within 1.5 units); the hider wins by surviving.
+- **Hyperparameters:** [Optuna-optimized](../hpo_study/) SAC settings (lr=2.25e-4, gamma=0.969, tau=0.00658, init_alpha=0.607, buffer=100K).
+- **Evaluation:** Cross-evaluation gauntlet — every trained seeker plays every trained hider for 50 episodes. "Seeker strength" is average win rate as seeker; "hider survival" is average survival rate as hider; "combined" is their average. This avoids the [misleading within-run metrics](../hpo_study/#training-metrics-are-misleading) found in prior studies.
+
+---
+
 ## Experiment 1A: The Entropy Counterfactual
 
-We trained SAC on **R4 Sparse** (no reward shaping — only terminal tag/timeout rewards) under three entropy conditions:
+We trained SAC on **R4 Sparse** — the hardest reward condition, with **no per-step shaping at all** (no distance rewards, no time penalties, no survival bonuses). Agents receive only terminal rewards: +10/-10 for tagging, +6/-6 for timeout. See the [reward shaping study](../reward_shaping/#reward-functions) for all 8 preset definitions.
+
+Three entropy conditions:
 
 | Condition | Description |
 |-----------|-------------|
@@ -27,7 +45,7 @@ We trained SAC on **R4 Sparse** (no reward shaping — only terminal tag/timeout
 | **alpha=0.1** | Fixed moderate entropy — no auto-tuning |
 | **control** | Standard SAC with automatic entropy tuning (init=0.607) |
 
-Each condition: 3 seeds, 5M timesteps, Optuna-optimized hyperparameters, four_corners layout with HSM=1.15.
+Each condition: 3 seeds, 5M timesteps, 64 parallel environments.
 
 ### Alpha Trajectories
 
@@ -41,13 +59,15 @@ The auto-tuned alpha settles 30x lower than the fixed alpha=0.1 condition. This 
 
 ### Cross-Evaluation Results
 
-All agents were cross-evaluated in an 11x11 gauntlet (50 episodes per matchup). Results for the 1A conditions:
+All agents were cross-evaluated in an 11x11 gauntlet (all 3 counterfactual conditions + all 8 preset conditions, every seeker vs every hider, 50 episodes per matchup). Results for the 1A conditions:
 
-| Condition | Seeker strength | Hider survival | Combined | Wall hugging |
+| Condition | Seeker strength | Hider survival | Combined | Wall hugging* |
 |-----------|:--------------:|:--------------:|:--------:|:------------:|
 | **control** (auto-tuned) | **39.3%** | **74.9%** | **57.1%** | 0.78 |
 | alpha=0 (no entropy) | 30.0% | 62.0% | 46.0% | 0.67 |
 | alpha=0.1 (fixed) | 1.5% | 18.4% | 9.9% | 0.43 |
+
+*\*Wall hugging: fraction of time the hider spends within 2 units of a wall, averaged across all matchups.*
 
 **Key findings:**
 
@@ -63,7 +83,7 @@ All agents were cross-evaluated in an 11x11 gauntlet (50 episodes per matchup). 
 
 ## Experiment 1B: Alpha Dynamics Across Reward Presets
 
-We trained SAC with auto-tuned entropy across all 8 reward presets (3 seeds each, 5M steps) to see whether the reward function affects the learned entropy schedule.
+We trained SAC with auto-tuned entropy across all [8 reward presets](../reward_shaping/#reward-functions) (3 seeds each, 5M steps) to see whether the reward function affects the learned entropy schedule. The presets range from R0 (minimal shaping) through R4 (fully sparse — terminal rewards only) to R7 (all shaping terms combined).
 
 ### Alpha Trajectories by Preset
 
@@ -140,9 +160,15 @@ The critical design choice is not the reward function or the entropy coefficient
 
 ## Experimental Details
 
-- **Environment:** four_corners layout, HSM=1.15, 200-step episodes
-- **Algorithm:** SAC with Optuna-optimized hyperparameters (lr=2.25e-4, gamma=0.969, tau=0.00658, init_alpha=0.607, buffer=100K, batch=256, updates_per_step=4)
+- **Environment:** 30x30 arena, four_corners layout, hider 15% faster (HSM=1.15), 200-step episodes (10s simulated time)
+- **Algorithm:** SAC with [Optuna-optimized hyperparameters](../hpo_study/) (lr=2.25e-4, gamma=0.969, tau=0.00658, init_alpha=0.607, buffer=100K, batch=256, updates_per_step=4)
 - **Training:** 5M timesteps per run, 64 parallel environments
 - **Evaluation:** 11x11 cross-evaluation gauntlet, 50 episodes per matchup
 - **Total runs:** 33 (9 counterfactual + 24 preset dynamics)
-- **Compute:** LUMI supercomputer, ~33 CPU-hours
+- **Compute:** [LUMI supercomputer](https://www.lumi-supercomputer.eu/), ~33 CPU-hours
+
+---
+
+**Study series:** [Reward Shaping](../reward_shaping/) | [HPO & Zoo Mixing](../hpo_study/) | Entropy Ablation (this page)
+
+*[View source code](https://github.com/kilojoules/AI-Plays-Tag)*
