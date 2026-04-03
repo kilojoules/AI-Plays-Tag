@@ -11,7 +11,7 @@ Two RL agents learn to play tag in a 2D arena with obstacles. The **seeker** (re
 
 **The big finding: algorithm choice (SAC vs PPO) dominates everything else.** Zoo mixing, reward presets, hyperparameter tuning — none of it closes the gap.
 
-**[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
+**[Entropy Ablation](https://kilojoules.github.io/AI-Plays-Tag/entropy_study/)** | **[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
 
 ---
 
@@ -83,6 +83,28 @@ To settle which training method produces the best opponents, we ran a [cross-met
 | Zoo / PPO | 23.9% | 32.5% | 28.2% |
 
 SAC methods cluster at 78-81% combined strength. All PPO and zoo methods sit below 51%. The training paradigm (self-play, zoo, reward presets) barely matters compared to the algorithm choice.
+
+---
+
+## Entropy Temperature Ablation
+
+The [entropy ablation study](https://kilojoules.github.io/AI-Plays-Tag/entropy_study/) tests whether SAC's entropy bonus is the mechanism behind its dominance. We trained SAC on sparse rewards (no shaping) under three entropy conditions:
+
+<p align="center">
+  <img src="docs/entropy_study/alpha_counterfactual.png" alt="Entropy temperature dynamics" width="600">
+</p>
+
+Auto-tuned alpha starts at ~0.57 and **crashes to ~0.003 within 500K steps**. The competitive arms race plays out *after* entropy has already decayed to near-zero.
+
+| Condition | Seeker | Hider survival | Combined |
+|-----------|-------:|---------------:|---------:|
+| **Auto-tuned** (settles to ~0.003) | 39.3% | 74.9% | **57.1%** |
+| No entropy (alpha=0) | 30.0% | 62.0% | 46.0% |
+| Fixed alpha=0.1 | 1.5% | 18.4% | 9.9% |
+
+**Fixed moderate entropy is catastrophically worse than no entropy at all.** The mechanism is not sustained exploration — it's a brief high-entropy bootstrapping phase that must naturally terminate. Auto-tuning discovers this schedule; a fixed coefficient prevents it.
+
+Across all 8 reward presets, the learned entropy schedule is nearly identical — the reward function doesn't affect it. With SAC, R4 Sparse (no shaping) ranks 3rd out of 8, confirming that reward engineering is largely unnecessary when the entropy schedule is correct.
 
 ---
 
@@ -167,6 +189,7 @@ Over 1,500 training runs across all experiments:
 | Reward shaping | 48 | 5M | 240M |
 | FR sweep (v1 + v2) | 300 | 5M | 1.5B |
 | HPO (Optuna) | 200 | 1M | 200M |
+| Entropy ablation | 33 | 5M | 165M |
 
 All evaluated via cross-config gauntlets (20-50 episodes per matchup).
 
