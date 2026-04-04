@@ -50,6 +50,47 @@ LAYOUTS: Dict[str, Dict[str, Any]] = {
         ],
         'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
     },
+    # --- Geometry study layouts: vary obstacle-to-corner proximity ---
+    'one_corner': {
+        'obstacles': [
+            Obstacle(x=-8.0, y=8.0, half_width=1.5, half_height=1.5),   # Top-left only
+        ],
+        'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
+    },
+    'two_corners': {
+        'obstacles': [
+            Obstacle(x=-8.0, y=8.0, half_width=1.5, half_height=1.5),   # Top-left
+            Obstacle(x=8.0, y=-8.0, half_width=1.5, half_height=1.5),   # Bottom-right (diagonal)
+        ],
+        'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
+    },
+    'wall_midpoints': {
+        'obstacles': [
+            Obstacle(x=0.0, y=10.0, half_width=1.5, half_height=1.5),   # Top wall midpoint
+            Obstacle(x=0.0, y=-10.0, half_width=1.5, half_height=1.5),  # Bottom wall midpoint
+            Obstacle(x=10.0, y=0.0, half_width=1.5, half_height=1.5),   # Right wall midpoint
+            Obstacle(x=-10.0, y=0.0, half_width=1.5, half_height=1.5),  # Left wall midpoint
+        ],
+        'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
+    },
+    'corner_tight': {
+        'obstacles': [
+            Obstacle(x=-12.0, y=12.0, half_width=1.5, half_height=1.5), # Very close to TL corner
+            Obstacle(x=12.0, y=12.0, half_width=1.5, half_height=1.5),  # Very close to TR corner
+            Obstacle(x=-12.0, y=-12.0, half_width=1.5, half_height=1.5),# Very close to BL corner
+            Obstacle(x=12.0, y=-12.0, half_width=1.5, half_height=1.5), # Very close to BR corner
+        ],
+        'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
+    },
+    'center_cluster': {
+        'obstacles': [
+            Obstacle(x=-3.0, y=3.0, half_width=1.5, half_height=1.5),
+            Obstacle(x=3.0, y=3.0, half_width=1.5, half_height=1.5),
+            Obstacle(x=-3.0, y=-3.0, half_width=1.5, half_height=1.5),
+            Obstacle(x=3.0, y=-3.0, half_width=1.5, half_height=1.5),
+        ],
+        'safe_zone': SafeZone(x=0.0, y=0.0, radius=2.5),
+    },
     'playground': {
         'obstacles': [
             # Central chokepoint: two pillars with gap between

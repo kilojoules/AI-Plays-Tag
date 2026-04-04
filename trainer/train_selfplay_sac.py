@@ -104,6 +104,44 @@ class SelfPlaySACTrainer:
         self.metrics_path = os.path.join(self.output_dir, "metrics.csv")
         self._init_csv()
 
+    def _compute_buffer_diversity(self, role: str) -> dict:
+        """Measure replay buffer diversity: position coverage and action variance."""
+        buf = self.buffers[role]
+        if buf.size < 100:
+            return {'pos_coverage': 0.0, 'action_std': 0.0, 'obs_entropy': 0.0}
+
+        # Sample 2000 transitions (or all if buffer is small)
+        n = min(buf.size, 2000)
+        idxs = np.random.randint(0, buf.size, size=n)
+        obs = buf.obs[idxs]       # [n, obs_dim]
+        actions = buf.actions[idxs]  # [n, act_dim]
+
+        # Position coverage: discretize positions (obs[0:2]) into 10x10 grid
+        pos = obs[:, 0:2]  # normalized position [-1, 1]
+        bins = np.clip(((pos + 1.0) * 5).astype(int), 0, 9)  # [n, 2] -> grid coords
+        cell_ids = bins[:, 0] * 10 + bins[:, 1]
+        unique_cells = len(np.unique(cell_ids))
+        pos_coverage = unique_cells / 100.0  # fraction of 10x10 grid covered
+
+        # Action standard deviation (mean across dims)
+        action_std = float(actions[:, :2].std())
+
+        # Observation entropy: bin first 4 obs dims, compute joint entropy
+        obs_4d = obs[:, 0:4]  # pos + vel
+        binned = np.clip(((obs_4d + 1.5) * 3).astype(int), 0, 8)  # 9 bins per dim
+        # Flatten to single ID
+        cell_4d = binned[:, 0] * 729 + binned[:, 1] * 81 + binned[:, 2] * 9 + binned[:, 3]
+        counts = np.bincount(cell_4d, minlength=6561).astype(np.float64)
+        probs = counts / counts.sum()
+        probs = probs[probs > 0]
+        obs_entropy = float(-np.sum(probs * np.log(probs)))
+
+        return {
+            'pos_coverage': pos_coverage,
+            'action_std': action_std,
+            'obs_entropy': obs_entropy,
+        }
+
     def _init_csv(self):
         with open(self.metrics_path, "w", newline="") as f:
             csv.writer(f).writerow([
@@ -117,6 +155,8 @@ class SelfPlaySACTrainer:
                 "hider_speed", "seeker_speed",
                 "fps",
                 "hider_te", "hider_kl",
+                "hider_buf_coverage", "hider_buf_action_std", "hider_buf_entropy",
+                "seeker_buf_coverage", "seeker_buf_action_std", "seeker_buf_entropy",
             ])
 
     def _act_batch(self, agent: SACAgent, obs: np.ndarray, random: bool = False) -> np.ndarray:
@@ -142,6 +182,10 @@ class SelfPlaySACTrainer:
         s_info = train_infos.get('seeker', {})
         h_info = train_infos.get('hider', {})
 
+        # Buffer diversity (computed once per log interval)
+        h_div = self._compute_buffer_diversity('hider')
+        s_div = self._compute_buffer_diversity('seeker')
+
         row = [
             timesteps, self._total_episodes,
             np.mean(s_rews), np.std(s_rews),
@@ -156,6 +200,8 @@ class SelfPlaySACTrainer:
             fps,
             np.mean(self._window_te) if self._window_te else 0,
             np.mean(self._window_kl) if self._window_kl else 0,
+            h_div['pos_coverage'], h_div['action_std'], h_div['obs_entropy'],
+            s_div['pos_coverage'], s_div['action_std'], s_div['obs_entropy'],
         ]
 
         with open(self.metrics_path, "a", newline="") as f:
