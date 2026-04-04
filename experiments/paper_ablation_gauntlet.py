@@ -97,6 +97,8 @@ def evaluate_matchup(seeker_fn, hider_fn, num_episodes=50):
 
     wall_samples = []
     speed_samples = []
+    corner_samples = []
+    wall_speed_samples = []
 
     for step in range(max_steps):
         seeker_actions = seeker_fn(obs['seeker'])
@@ -109,6 +111,8 @@ def evaluate_matchup(seeker_fn, hider_fn, num_episodes=50):
 
         wall_samples.append(infos['hider_near_wall_frac'])
         speed_samples.append(infos['hider_speed_mean'])
+        corner_samples.append(infos['hider_corner_frac'])
+        wall_speed_samples.append(infos['hider_wall_speed_mean'])
 
         newly_done = dones & active
         if np.any(newly_done):
@@ -128,7 +132,9 @@ def evaluate_matchup(seeker_fn, hider_fn, num_episodes=50):
         'seeker_win_rate': float(tagged.mean()),
         'mean_episode_length': float(lengths.mean()),
         'mean_hider_wall_frac': float(np.mean(wall_samples)),
+        'mean_hider_corner_frac': float(np.mean(corner_samples)),
         'mean_hider_speed': float(np.mean(speed_samples)),
+        'mean_hider_wall_speed': float(np.mean(wall_speed_samples)),
     }
 
 
@@ -195,7 +201,9 @@ def main():
     win_matrix = np.zeros((n, n), dtype=np.float32)
     length_matrix = np.zeros((n, n), dtype=np.float32)
     wall_matrix = np.zeros((n, n), dtype=np.float32)
+    corner_matrix = np.zeros((n, n), dtype=np.float32)
     speed_matrix = np.zeros((n, n), dtype=np.float32)
+    wall_speed_matrix = np.zeros((n, n), dtype=np.float32)
 
     for i, s_cfg in enumerate(configs):
         for j, h_cfg in enumerate(configs):
@@ -204,11 +212,14 @@ def main():
             win_matrix[i, j] = result['seeker_win_rate']
             length_matrix[i, j] = result['mean_episode_length']
             wall_matrix[i, j] = result['mean_hider_wall_frac']
+            corner_matrix[i, j] = result['mean_hider_corner_frac']
             speed_matrix[i, j] = result['mean_hider_speed']
+            wall_speed_matrix[i, j] = result['mean_hider_wall_speed']
 
             wr = result['seeker_win_rate']
             el = result['mean_episode_length']
-            print(f"  S:{s_cfg:<25s} vs H:{h_cfg:<25s} -> WR={wr:.0%}  EL={el:.0f}")
+            cr = result['mean_hider_corner_frac']
+            print(f"  S:{s_cfg:<25s} vs H:{h_cfg:<25s} -> WR={wr:.0%}  EL={el:.0f}  Corner={cr:.2f}")
 
     # --- Save results ---
     results = {
@@ -216,7 +227,9 @@ def main():
         'win_matrix': win_matrix.tolist(),
         'length_matrix': length_matrix.tolist(),
         'wall_matrix': wall_matrix.tolist(),
+        'corner_matrix': corner_matrix.tolist(),
         'speed_matrix': speed_matrix.tolist(),
+        'wall_speed_matrix': wall_speed_matrix.tolist(),
         'num_episodes_per_matchup': 50,
     }
 
@@ -249,8 +262,10 @@ def main():
             idx = configs.index(cfg)
             s_str = f"seeker={win_matrix[idx, :].mean():.1%}"
             h_str = f"hider_surv={1.0 - win_matrix[:, idx].mean():.1%}"
-            w_str = f"wall_frac={wall_matrix[:, idx].mean():.2f}"
-            print(f"  {cfg:<20s} {s_str}  {h_str}  {w_str}")
+            w_str = f"wall={wall_matrix[:, idx].mean():.2f}"
+            c_str = f"corner={corner_matrix[:, idx].mean():.2f}"
+            ws_str = f"wall_spd={wall_speed_matrix[:, idx].mean():.1f}"
+            print(f"  {cfg:<20s} {s_str}  {h_str}  {w_str}  {c_str}  {ws_str}")
 
 
 if __name__ == "__main__":

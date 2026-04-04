@@ -709,6 +709,13 @@ class VecTagEnv:
         hider_speed = np.linalg.norm(self.velocities[eids, hider_idx_arr], axis=1)
         seeker_speed = np.linalg.norm(self.velocities[eids, self.seeker_idx], axis=1)
 
+        # Corner proximity: near two walls simultaneously (both x and y within threshold)
+        corner_thresh = 3.0
+        in_corner = (hider_wall_dist[:, 0] < corner_thresh) & (hider_wall_dist[:, 1] < corner_thresh)
+        # Speed while near walls
+        near_wall_mask = hider_min_wall < 2.0
+        hider_wall_speed = float(hider_speed[near_wall_mask].mean()) if near_wall_mask.any() else 0.0
+
         # Build info dict
         infos = {
             'tagged': tagged.copy(),
@@ -719,7 +726,9 @@ class VecTagEnv:
             'hider_wins': (timed_out & ~tagged).sum(),
             'hider_wall_dist_mean': float(hider_min_wall.mean()),
             'hider_near_wall_frac': float((hider_min_wall < 2.0).mean()),
+            'hider_corner_frac': float(in_corner.mean()),
             'hider_speed_mean': float(hider_speed.mean()),
+            'hider_wall_speed_mean': hider_wall_speed,
             'seeker_speed_mean': float(seeker_speed.mean()),
         }
 
