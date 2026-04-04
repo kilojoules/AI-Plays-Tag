@@ -22,6 +22,7 @@ import torch
 
 from tag_env import VecTagEnv, TagEnvConfig
 from sac import SACConfig, SACAgent, ReplayBuffer
+from intrinsic_rewards import ResponsivenessTracker
 
 
 class SelfPlaySACTrainer:
@@ -33,6 +34,8 @@ class SelfPlaySACTrainer:
                  warmup_steps: int = 10_000, updates_per_step: int = 1,
                  lr: float = 3e-4, init_alpha: float = 0.2,
                  fixed_alpha: float = None,
+                 responsiveness_method: str = 'none',
+                 responsiveness_scale: float = 0.1,
                  log_interval: int = 1000,
                  save_interval: int = 50_000, output_dir: str = "experiments/results/selfplay_sac"):
         self.num_envs = num_envs
@@ -83,6 +86,17 @@ class SelfPlaySACTrainer:
         self._window_hider_speed = []
         self._window_seeker_speed = []
 
+        # Intrinsic responsiveness reward
+        self._responsiveness_scale = responsiveness_scale
+        if responsiveness_method != 'none':
+            self._responsiveness_tracker = ResponsivenessTracker(
+                num_envs=num_envs, obs_dim=self.env.obs_dim,
+                method=responsiveness_method)
+        else:
+            self._responsiveness_tracker = None
+        self._window_te = []
+        self._window_kl = []
+
         # Output
         self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = os.path.join(output_dir, self.run_id)
@@ -102,6 +116,7 @@ class SelfPlaySACTrainer:
                 "hider_wall_dist", "hider_near_wall_frac",
                 "hider_speed", "seeker_speed",
                 "fps",
+                "hider_te", "hider_kl",
             ])
 
     def _act_batch(self, agent: SACAgent, obs: np.ndarray, random: bool = False) -> np.ndarray:
@@ -139,6 +154,8 @@ class SelfPlaySACTrainer:
             np.mean(self._window_hider_speed) if self._window_hider_speed else 0,
             np.mean(self._window_seeker_speed) if self._window_seeker_speed else 0,
             fps,
+            np.mean(self._window_te) if self._window_te else 0,
+            np.mean(self._window_kl) if self._window_kl else 0,
         ]
 
         with open(self.metrics_path, "a", newline="") as f:
@@ -159,6 +176,8 @@ class SelfPlaySACTrainer:
         self._window_hider_near_wall = []
         self._window_hider_speed = []
         self._window_seeker_speed = []
+        self._window_te = []
+        self._window_kl = []
 
     def save_checkpoint(self, timesteps):
         for role in ['seeker', 'hider']:
@@ -190,6 +209,17 @@ class SelfPlaySACTrainer:
 
             next_obs, rewards, dones, infos = self.env.step(acts)
             timesteps += self.num_envs
+
+            # Compute intrinsic responsiveness reward for hider
+            if self._responsiveness_tracker is not None:
+                intrinsic = self._responsiveness_tracker.compute(
+                    obs['hider'], acts['hider'], next_obs['hider'], dones)
+                rewards['hider'] = rewards['hider'] + self._responsiveness_scale * intrinsic
+                # Log stats periodically
+                if timesteps % (self.log_interval * self.num_envs) < self.num_envs:
+                    stats = self._responsiveness_tracker.get_stats()
+                    self._window_te.append(stats['te_mean'])
+                    self._window_kl.append(stats['kl_mean'])
 
             # Store transitions in replay buffers
             for role in ['seeker', 'hider']:
@@ -278,6 +308,11 @@ def main():
     parser.add_argument("--fixed-alpha", type=float, default=None,
                         help="Fix entropy coefficient (disable auto-tuning). Use 0.0 for no-entropy ablation.")
     parser.add_argument("--init-alpha", type=float, default=0.2)
+    parser.add_argument("--responsiveness", type=str, default="none",
+                        choices=["none", "te", "kl", "both"],
+                        help="Intrinsic responsiveness reward: transfer entropy, conditional KL, or both.")
+    parser.add_argument("--responsiveness-scale", type=float, default=0.1,
+                        help="Scale factor for intrinsic responsiveness reward.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=5000)
     parser.add_argument("--save-interval", type=int, default=100_000)
@@ -314,6 +349,8 @@ def main():
         lr=args.lr,
         init_alpha=args.init_alpha,
         fixed_alpha=args.fixed_alpha,
+        responsiveness_method=args.responsiveness,
+        responsiveness_scale=args.responsiveness_scale,
         log_interval=args.log_interval,
         save_interval=args.save_interval,
         output_dir=args.output_dir,
