@@ -48,7 +48,17 @@ exp-compare = "python experiments/run_comparison.py"
 exp-visualize = "python experiments/visualize_comparison.py"
 exp-crossplay = "python experiments/cross_evaluate.py"
 
+# A-parameter research loop
+research-phase0 = "bash run_research_loop.sh 0"
+research-phase1 = "bash run_research_loop.sh 1"
+research-phase2 = "bash run_research_loop.sh 2"
+research-phase3 = "bash run_research_loop.sh 3"
+research-crosseval = "bash run_research_loop.sh 4"
+analyze-sweep = "python experiments/analyze_a_sweep.py experiments/results/sweep"
+
 [dependencies]
 pytorch = ">=2.10.0,<3"
 pandas = ">=3.0.0,<4"
 ffmpeg = ">=8.0.0,<9"
+pettingzoo = ">=1.25.0,<2"
+pygame = ">=2.6.1,<3"
