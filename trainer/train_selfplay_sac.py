@@ -340,7 +340,9 @@ def main():
     parser.add_argument("--updates-per-step", type=int, default=1)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--layout", type=str, default="four_corners",
-                        choices=["empty", "four_corners", "central_cross", "playground"])
+                        choices=["empty", "four_corners", "central_cross", "playground",
+                                 "one_corner", "two_corners", "wall_midpoints",
+                                 "corner_tight", "center_cluster"])
     parser.add_argument("--hider-speed-mult", type=float, default=1.0)
     parser.add_argument("--seeker-time-penalty", type=float, default=-0.005)
     parser.add_argument("--distance-reward-scale", type=float, default=0.14)
