@@ -207,7 +207,10 @@ def main():
 
         for ckpt_label, ckpt_name in [("500K", "hider_00500032.pt"),
                                        ("final", "policy_hider_final.pt")]:
-            path = runs[-1] / ("checkpoints" / ckpt_name if ckpt_label == "500K" else ckpt_name)
+            if ckpt_label == "500K":
+                path = runs[-1] / "checkpoints" / ckpt_name
+            else:
+                path = runs[-1] / ckpt_name
             if not path.exists():
                 continue
 
