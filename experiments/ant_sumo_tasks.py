@@ -20,7 +20,7 @@ import argparse, os, subprocess, sys
 from typing import List, Dict
 
 SEEDS = [0, 1, 2]
-TOTAL_TIMESTEPS = 500_000
+TOTAL_TIMESTEPS = 5_000_000
 BASE_OUTPUT = "experiments/results/ant_sumo"
 
 CONDITIONS = [
