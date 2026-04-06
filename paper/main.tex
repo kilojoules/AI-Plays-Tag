@@ -1,0 +1,160 @@
+\documentclass[letterpaper]{article}
+\usepackage{aaai26} % AAAI 2027 will likely use same or similar style
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage[hyphens]{url}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{hyperref}
+
+\title{Early Features Are All You Need: How Entropy Bootstrapping\\Determines Agent Strength in Competitive Self-Play}
+\author{
+    Julian Quick \\
+    % Affiliation \\
+    % email
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+In competitive self-play, Soft Actor-Critic (SAC) dominates Proximal Policy Optimization (PPO) by a 95-to-2 margin across 616 agents and six training paradigms---a gap that reward shaping, opponent diversity, and hyperparameter optimization cannot close.
+We trace this dominance to a brief high-entropy bootstrapping phase: auto-tuned entropy temperature crashes from its initial value to near-zero within the first 10\% of training, and this transient window determines final agent strength.
+Transplant experiments reveal that the advantage is encoded in the \emph{actor's} first hidden layer, not the critic: freezing the actor after bootstrapping produces stronger agents than continued training (57.9\% vs 38.9\% combined strength), and pairing the bootstrapped actor with a randomly initialized critic recovers 51.6\%.
+The qualitative mechanism---a universal entropy decay schedule followed by actor feature crystallization---transfers from 2D tag to 3D MuJoCo Ant Sumo, though quantitative optima are environment-specific.
+These findings invert the primacy bias narrative: in competitive settings, early features are not a liability to be periodically reset, but the most valuable thing the agent learns.
+\end{abstract}
+
+% ============================================================
+\section{Introduction}
+\label{sec:intro}
+% ============================================================
+
+% Hook: SAC dominates PPO in competitive self-play
+% What everyone expects: entropy enables sustained exploration
+% What we find: brief bootstrapping phase -> actor features -> critic is replaceable
+% Contrast with primacy bias (Nikishin 2022) and critic plasticity (Ma et al. ICLR 2024)
+% Road map
+
+\textbf{TODO: Write introduction.}
+
+% ============================================================
+\section{Related Work}
+\label{sec:related}
+% ============================================================
+
+% SAC and entropy in RL (Haarnoja et al. 2018, Meta-SAC)
+% Self-play methods (Silver et al., OpenAI Five, AlphaStar)
+% Algorithm comparison in MARL (MAPPO - Yu et al. NeurIPS 2022)
+% Representation learning in RL (Garcin et al. ICLR 2025)
+% Primacy bias and plasticity (Nikishin et al. 2022, Ma et al. 2024, Lyle et al. 2024)
+% Entropy scheduling (count-based, adaptive)
+
+\textbf{TODO: Write related work.}
+
+% ============================================================
+\section{Environments and Evaluation}
+\label{sec:env}
+% ============================================================
+
+% Tag environment (30x30, obstacles, vision rays, 9 layouts)
+% Ant Sumo (MuJoCo, circular arena, push-out win condition)
+% Cross-evaluation gauntlet methodology
+% Why within-run metrics are misleading
+
+\textbf{TODO: Write environments section.}
+
+% ============================================================
+\section{SAC Dominates Competitive Self-Play}
+\label{sec:dominance}
+% ============================================================
+
+% 616-agent cross-method gauntlet: SAC 78-81%, PPO below 51%
+% Null results: zoo training, reward shaping, HPO
+% Figure 1: gauntlet heatmap
+
+\textbf{TODO: Write dominance results.}
+
+% ============================================================
+\section{The Entropy Schedule}
+\label{sec:entropy}
+% ============================================================
+
+% Alpha trajectory: crash to ~0.003 in 500K steps
+% Universal across 8 reward presets
+% Counterfactual: auto-tuned >> no entropy >> fixed 0.1
+% Cross-domain: same shape in Ant Sumo
+% Figure 2: alpha trajectories
+% Figure 3: counterfactual bars
+
+\textbf{TODO: Write entropy schedule section.}
+
+% ============================================================
+\section{The Mechanism: Actor Feature Conditioning}
+\label{sec:mechanism}
+% ============================================================
+
+% Init-alpha determines strength via inverted-U (tag)
+% Q-value correlation: best agent has worst critic at 500K
+% Transplant experiments (5-seed): actor carries strength
+% Freeze-actor beats continued training
+% First hidden layer carries the features
+% Connection to primacy bias (inverted)
+% Figure 4: mechanism results
+% Figure 5: init-alpha
+
+\textbf{TODO: Write mechanism section.}
+
+% ============================================================
+\section{Cross-Domain Validation}
+\label{sec:crossdomain}
+% ============================================================
+
+% Ant Sumo: entropy schedule transfers (same alpha ~0.004)
+% Auto-tuning helps in both domains
+% Specific init-alpha optimum is environment-specific
+% This decomposition (universal mechanism + specific tuning) is itself useful
+
+\textbf{TODO: Write cross-domain section.}
+
+% ============================================================
+\section{Corner Camping and Environment Geometry}
+\label{sec:geometry}
+% ============================================================
+
+% 9 layouts, corner camping scales with obstacle-corner proximity
+% Wall-midpoints: high wall use, zero corner camping
+% Corner camping inversely correlated with cross-eval strength
+% Figure 6: geometry
+
+\textbf{TODO: Write geometry section (may move to supplementary).}
+
+% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================
+
+% Connection to plasticity literature: invert Nikishin, contradict Ma et al.
+% Why continued training degrades features: distribution shift from arms race
+% Practical implications: always auto-tune, don't transfer specific alpha values
+% Limitations: 2 environments, 2-layer MLPs
+
+\textbf{TODO: Write discussion.}
+
+% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ============================================================
+
+\textbf{TODO: Write conclusion.}
+
+% ============================================================
+\bibliography{refs}
+\bibliographystyle{aaai}
+
+\end{document}
