@@ -97,17 +97,25 @@ def fit_bayes_mixed(df: pd.DataFrame) -> dict | None:
         m = BinomialBayesMixedGLM.from_formula(formula, vc_formula, df)
         r = m.fit_vb()
     except Exception as e:
-        return dict(error=str(e))
-    # Find RA coefficient
-    names = list(r.model.exog_names)
-    if "RA" not in names:
-        return dict(error="no RA term found")
-    i = names.index("RA")
-    mean = float(r.params[i])
-    sd = float(r.cov_params()[i, i] ** 0.5) if hasattr(r, "cov_params") else float(r.fe_sd[i])
-    z = 1.959963984540054
-    return dict(beta=mean, sd=sd, ci_lo=mean - z * sd, ci_hi=mean + z * sd,
-                method="VB BinomialBayesMixedGLM")
+        return dict(error=f"fit failed: {e}")
+    try:
+        names = list(r.model.exog_names)
+        if "RA" not in names:
+            return dict(error=f"no RA term found in {names}")
+        i = names.index("RA")
+        # VB result exposes posterior means/sds via fe_mean / fe_sd (or .params / .cov_params).
+        if hasattr(r, "fe_mean") and hasattr(r, "fe_sd"):
+            mean = float(np.asarray(r.fe_mean)[i])
+            sd = float(np.asarray(r.fe_sd)[i])
+        else:
+            mean = float(np.asarray(r.params)[i])
+            cov = np.asarray(r.cov_params())
+            sd = float(cov[i, i] ** 0.5)
+        z = 1.959963984540054
+        return dict(beta=mean, sd=sd, ci_lo=mean - z * sd, ci_hi=mean + z * sd,
+                    method="VB BinomialBayesMixedGLM")
+    except Exception as e:
+        return dict(error=f"extraction failed: {e}")
 
 
 def cell_means(df: pd.DataFrame) -> pd.DataFrame:
