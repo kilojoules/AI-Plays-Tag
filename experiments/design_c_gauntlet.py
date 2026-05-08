@@ -47,8 +47,9 @@ OUT_DIR = ROOT / "experiments" / "results" / "design_c" / "gauntlet"
 
 REWARDS = ["R4_sparse", "R7_kitchen_sink"]
 A_VALUES = [0.0, 0.5]
-GRID_SEEDS = [0, 1, 2]
 ANCHOR_SEED = 42
+# Grid seeds are auto-discovered from the directory tree so REFINE rounds
+# (extra seeds added later) get folded in without code edits.
 
 # Successive-halving stages: (cumulative_episodes, half_width_threshold)
 # A matchup advances to the next stage iff its Wilson 95% CI half-width
@@ -82,18 +83,36 @@ def discover_run(base: Path, reward: str, A: float, seed: int) -> Path | None:
     return None
 
 
+def discover_grid_seeds(base: Path, reward: str, A: float) -> list[int]:
+    """Scan {base}/{reward}/A{aa}/seed_* for any seed directories with a final policy."""
+    cell = base / reward / _a_str(A)
+    if not cell.exists():
+        return []
+    seeds = []
+    for d in sorted(cell.glob("seed_*")):
+        try:
+            s = int(d.name.split("_", 1)[1])
+        except ValueError:
+            continue
+        if discover_run(base, reward, A, s) is not None:
+            seeds.append(s)
+    return seeds
+
+
 def build_pool() -> List[Dict]:
     """Return list of pool entries, each a dict with id, source, reward, A, seed, ts_dir."""
     pool = []
     pid = 0
-    # Grid
-    for reward, A, seed in itertools.product(REWARDS, A_VALUES, GRID_SEEDS):
-        ts = discover_run(GRID_BASE, reward, A, seed)
-        if ts is None:
-            print(f"  MISSING grid: {reward} {_a_str(A)} seed={seed}", file=sys.stderr)
+    # Grid: seeds auto-discovered so REFINE-round additions get included.
+    for reward, A in itertools.product(REWARDS, A_VALUES):
+        seeds = discover_grid_seeds(GRID_BASE, reward, A)
+        if not seeds:
+            print(f"  MISSING grid: {reward} {_a_str(A)} (no seeds found)", file=sys.stderr)
             continue
-        pool.append(dict(id=pid, source="grid", reward=reward, A=A, seed=seed, ts_dir=ts))
-        pid += 1
+        for seed in seeds:
+            ts = discover_run(GRID_BASE, reward, A, seed)
+            pool.append(dict(id=pid, source="grid", reward=reward, A=A, seed=seed, ts_dir=ts))
+            pid += 1
     # Anchors
     for reward, A in itertools.product(REWARDS, A_VALUES):
         ts = discover_run(ANCHORS_BASE, reward, A, ANCHOR_SEED)
