@@ -16,6 +16,8 @@ pytorch = ">=2.2"
 gymnasium = "*"
 scipy = ">=1.11"
 statsmodels = ">=0.14"
+pymc = ">=5.10"
+arviz = ">=0.17"
 
 [environments]
 default = { features = ["server"] }
