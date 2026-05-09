@@ -27,7 +27,7 @@ echo ""
 
 mkdir -p logs
 
-pixi run python experiments/design_c_analyze.py
+pixi run -e train python experiments/design_c_analyze.py
 
 echo ""
 echo "Done: $(date)"
