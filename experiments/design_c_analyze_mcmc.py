@@ -66,12 +66,27 @@ def load_data(include_self: bool = False) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def fit_pymc(df: pd.DataFrame, draws: int = 2000, chains: int = 4, target_accept: float = 0.95):
+def fit_pymc(df: pd.DataFrame, draws: int = 2000, chains: int = 4,
+             target_accept: float = 0.95, heteroscedastic: bool = True):
+    """Logistic mixed-effects with optional reward-specific seeker sigma.
+
+    The heteroscedastic variant (recommended per the critic) gives separate
+    σ_seeker[R4] and σ_seeker[R7] instead of pooling, so R4's tight variance
+    doesn't get washed out by R7's wide variance.
+    """
     import pymc as pm
-    import pytensor.tensor as pt
 
     seeker_codes, seeker_uniques = pd.factorize(df["seeker_id"])
     hider_codes, hider_uniques = pd.factorize(df["hider_id"])
+
+    # Each seeker has a single reward — map seeker code -> reward index (0=R4, 1=R7)
+    seeker_to_R = (
+        df.drop_duplicates("seeker_id")
+          .set_index("seeker_id")
+          .loc[seeker_uniques, "R"]
+          .astype(int)
+          .to_numpy()
+    )
 
     R = df["R"].to_numpy(np.int8)
     A = df["A_bin"].to_numpy(np.int8)
@@ -81,6 +96,7 @@ def fit_pymc(df: pd.DataFrame, draws: int = 2000, chains: int = 4, target_accept
     coords = {
         "seeker": list(map(int, seeker_uniques)),
         "hider":  list(map(int, hider_uniques)),
+        "reward": ["R4", "R7"],
         "obs": np.arange(len(df)),
     }
 
@@ -90,9 +106,15 @@ def fit_pymc(df: pd.DataFrame, draws: int = 2000, chains: int = 4, target_accept
         beta_A = pm.Normal("beta_A", 0, 2.5)
         beta_RA = pm.Normal("beta_RA", 0, 2.5)
 
-        sigma_s = pm.HalfNormal("sigma_s", 2.0)
+        if heteroscedastic:
+            sigma_s_by_R = pm.HalfNormal("sigma_s_by_R", 2.0, dims="reward")
+            sigma_s_for_seeker = sigma_s_by_R[seeker_to_R]
+            alpha_s = pm.Normal("alpha_s", 0, sigma_s_for_seeker, dims="seeker")
+        else:
+            sigma_s = pm.HalfNormal("sigma_s", 2.0)
+            alpha_s = pm.Normal("alpha_s", 0, sigma_s, dims="seeker")
+
         sigma_h = pm.HalfNormal("sigma_h", 2.0)
-        alpha_s = pm.Normal("alpha_s", 0, sigma_s, dims="seeker")
         alpha_h = pm.Normal("alpha_h", 0, sigma_h, dims="hider")
 
         eta = (beta_0 + beta_R * R + beta_A * A + beta_RA * RA
@@ -113,20 +135,26 @@ def main():
     ap.add_argument("--chains", type=int, default=4)
     ap.add_argument("--target-accept", type=float, default=0.95)
     ap.add_argument("--include-self", action="store_true")
+    ap.add_argument("--pooled-sigma", action="store_true",
+                    help="Use pooled sigma_seeker instead of the recommended reward-stratified sigma.")
+    ap.add_argument("--out-suffix", type=str, default="",
+                    help="Append to output filenames (e.g. '_pooled' to compare runs).")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     df = load_data(include_self=args.include_self)
     print(f"Loaded {len(df)} episodes  ({df.seeker_id.nunique()} seekers x {df.hider_id.nunique()} hiders)")
 
-    print("\nFitting PyMC NUTS — this takes a few minutes...")
+    heteroscedastic = not args.pooled_sigma
+    print(f"\nFitting PyMC NUTS  (heteroscedastic σ_seeker[reward]: {heteroscedastic}) — this takes a few minutes...")
     idata, model = fit_pymc(df, draws=args.draws, chains=args.chains,
-                            target_accept=args.target_accept)
+                            target_accept=args.target_accept,
+                            heteroscedastic=heteroscedastic)
 
     import arviz as az
-    summary = az.summary(idata, var_names=["beta_0", "beta_R", "beta_A", "beta_RA",
-                                            "sigma_s", "sigma_h"],
-                         hdi_prob=0.95, round_to=4)
+    var_names = ["beta_0", "beta_R", "beta_A", "beta_RA", "sigma_h"]
+    var_names += ["sigma_s_by_R"] if heteroscedastic else ["sigma_s"]
+    summary = az.summary(idata, var_names=var_names, hdi_prob=0.95, round_to=4)
     print("\n=== Posterior summary (95% HDI) ===")
     print(summary.to_string())
 
@@ -156,7 +184,7 @@ def main():
     lines.append("")
     lines.append(f"Pre-reg thresholds: PURSUE >= {THRESH_PURSUE:.3f}, KILL < {THRESH_KILL:.3f}")
 
-    out_txt = OUT_DIR / "mcmc_summary.txt"
+    out_txt = OUT_DIR / f"mcmc_summary{args.out_suffix}.txt"
     out_txt.write_text("\n".join(lines))
     print("\n" + out_txt.read_text())
 
@@ -165,10 +193,11 @@ def main():
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        ax = az.plot_trace(idata, var_names=["beta_R", "beta_A", "beta_RA",
-                                              "sigma_s", "sigma_h"])
+        trace_vars = ["beta_R", "beta_A", "beta_RA", "sigma_h"]
+        trace_vars += ["sigma_s_by_R"] if heteroscedastic else ["sigma_s"]
+        ax = az.plot_trace(idata, var_names=trace_vars)
         plt.tight_layout()
-        plt.savefig(OUT_DIR / "mcmc_trace.png", dpi=110)
+        plt.savefig(OUT_DIR / f"mcmc_trace{args.out_suffix}.png", dpi=110)
         plt.close()
 
         fig, ax = plt.subplots(figsize=(8, 4))
@@ -185,9 +214,9 @@ def main():
         ax.set_title(f"β_RA posterior — {verdict(median, lo, hi).split(' ')[0]}")
         ax.legend()
         plt.tight_layout()
-        plt.savefig(OUT_DIR / "posterior_RA.png", dpi=120)
+        plt.savefig(OUT_DIR / f"posterior_RA{args.out_suffix}.png", dpi=120)
         plt.close()
-        print(f"Plots: {OUT_DIR / 'mcmc_trace.png'}  {OUT_DIR / 'posterior_RA.png'}")
+        print(f"Plots: {OUT_DIR}")
     except Exception as e:
         print(f"(plot skipped: {e})", file=sys.stderr)
 
