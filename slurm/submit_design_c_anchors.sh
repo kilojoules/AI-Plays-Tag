@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00
-#SBATCH --array=0-3
+#SBATCH --array=0-3%3
 #SBATCH --output=logs/dc_anchors_%A_%a.out
 #SBATCH --error=logs/dc_anchors_%A_%a.err
 
