@@ -71,21 +71,36 @@ def batch_act(policy, obs_batch):
 
 def collect_features(seeker: PPOAgent, hider: PPOAgent, env_config: TagEnvConfig,
                      n_episodes: int) -> dict:
-    """Roll out n_episodes seeker-vs-hider; return aggregated trajectory features."""
+    """Roll out n_episodes seeker-vs-hider; return aggregated trajectory features.
+
+    Role indexing: VecTagEnv randomizes which agent slot (0/1) is the seeker
+    on every reset (tag_env.py, self.seeker_idx), so positions must be
+    gathered via env.seeker_idx. Indexing positions[:, 0] as "the seeker"
+    (the pre-2026-07 version of this function) scrambled roles in ~50% of
+    episodes; wr was unaffected (info['tagged'] is role-independent) but all
+    positional features were.
+    """
     env = VecTagEnv(num_envs=n_episodes, config=env_config)
     obs = env.reset()
+    env_ids = np.arange(n_episodes)
     active = np.ones(n_episodes, dtype=bool)
     tagged = np.zeros(n_episodes, dtype=bool)
     steps_taken = np.zeros(n_episodes, dtype=np.int32)
 
-    # Per-step seeker position trace, per env
+    # Spatial thresholds as fractions of the actual arena half-extent
+    # (the original constants 3.0/6.0 were calibrated to a 7.5 half-extent;
+    # cfg.arena_half is 15.0). center overlaps the hider safe zone (r=2.5
+    # at origin) only marginally at 0.4*15 = 6.0.
+    half = env_config.arena_half
+    center_thresh = 0.4 * half
+    wall_thresh = 0.8 * half
+
+    # Per-step seeker position trace, per env (role-correct gather)
     path_len = np.zeros(n_episodes, dtype=np.float32)
-    last_pos = env.positions[:, 0].copy()  # seeker is index 0
+    last_pos = env.positions[env_ids, env.seeker_idx].copy()
     # Track summed seeker-hider distance over time
     dist_sum = np.zeros(n_episodes, dtype=np.float32)
-    # Track time in arena center (|x|,|y| < 3.0 out of 7.5)
     time_in_center = np.zeros(n_episodes, dtype=np.float32)
-    # Track time at wall (|x| or |y| > 6.0)
     time_at_wall = np.zeros(n_episodes, dtype=np.float32)
     # Final seeker position
     final_x = np.zeros(n_episodes, dtype=np.float32)
@@ -105,15 +120,15 @@ def collect_features(seeker: PPOAgent, hider: PPOAgent, env_config: TagEnvConfig
             tagged[newly_done] = info.get("tagged", np.zeros(n_episodes, dtype=bool))[newly_done]
             steps_taken[newly_done] = step + 1
 
-        # Trajectory features over currently-active envs
-        cur_pos = env.positions[:, 0]  # seeker
-        hider_pos = env.positions[:, 1]
+        # Trajectory features over currently-active envs (role-correct gather)
+        cur_pos = env.positions[env_ids, env.seeker_idx]
+        hider_pos = env.positions[env_ids, 1 - env.seeker_idx]
         diff = cur_pos - last_pos
         path_len[active] += np.linalg.norm(diff[active], axis=-1)
         dist_sum[active] += np.linalg.norm((cur_pos - hider_pos)[active], axis=-1)
-        in_center = (np.abs(cur_pos[:, 0]) < 3.0) & (np.abs(cur_pos[:, 1]) < 3.0)
+        in_center = (np.abs(cur_pos[:, 0]) < center_thresh) & (np.abs(cur_pos[:, 1]) < center_thresh)
         time_in_center[active & in_center] += 1
-        at_wall = (np.abs(cur_pos[:, 0]) > 6.0) | (np.abs(cur_pos[:, 1]) > 6.0)
+        at_wall = (np.abs(cur_pos[:, 0]) > wall_thresh) | (np.abs(cur_pos[:, 1]) > wall_thresh)
         time_at_wall[active & at_wall] += 1
 
         last_pos = cur_pos.copy()
@@ -124,7 +139,7 @@ def collect_features(seeker: PPOAgent, hider: PPOAgent, env_config: TagEnvConfig
 
     # Anything still active at MAX_STEPS: final pos taken now
     if active.any():
-        cur_pos = env.positions[:, 0]
+        cur_pos = env.positions[env_ids, env.seeker_idx]
         for eid in np.where(active)[0]:
             final_x[eid] = cur_pos[eid, 0]
             final_y[eid] = cur_pos[eid, 1]
@@ -159,37 +174,47 @@ def discover_run(base: Path, reward: str, A: float, seed: int) -> Path | None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--episodes", type=int, default=30,
-                    help="Episodes per seeker against the reference hider.")
-    ap.add_argument("--reference", type=int, default=None,
-                    help="Policy id to use as the reference hider. Default: first R4 anchor.")
+                    help="Episodes per seeker per reference hider.")
+    ap.add_argument("--reference", type=str, default="anchors",
+                    help="Reference hider(s): 'anchors' = all prereg anchors "
+                         "(default; single-opponent evals are untrustworthy, "
+                         "results.md section 9/13), or comma-separated policy ids.")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     idx = pd.read_csv(GAUNTLET_DIR / "policy_index.csv")
     print(f"Pool: {len(idx)} policies")
 
-    # Pick reference hider: first R4 anchor by default (a mediocre, consistent
-    # baseline that gives all seekers room to express different strategies).
-    if args.reference is None:
-        anchor_r4 = idx[(idx.source == "anchor") & (idx.reward == "R4_sparse")]
-        ref_id = int(anchor_r4.iloc[0].id) if len(anchor_r4) else int(idx.iloc[0].id)
+    if args.reference == "anchors":
+        ref_rows = idx[idx.source == "anchor"]
+        if not len(ref_rows):
+            ref_rows = idx.iloc[[0]]
     else:
-        ref_id = args.reference
-    print(f"Reference hider: policy id {ref_id}")
+        ref_ids = [int(s) for s in args.reference.split(",")]
+        ref_rows = idx[idx.id.isin(ref_ids)]
+    print(f"Reference hiders: policy ids {list(ref_rows.id)}")
 
     env_probe = VecTagEnv(num_envs=1, config=TagEnvConfig(layout=LAYOUT, hider_speed_mult=HSM))
     obs_dim, act_dim = env_probe.obs_dim, env_probe.act_dim
     env_cfg = TagEnvConfig(layout=LAYOUT, hider_speed_mult=HSM)
 
-    ref_row = idx[idx.id == ref_id].iloc[0]
-    ref_ts = Path(ref_row.ts_dir)
-    ref_hider = load_policy(ref_ts / "policy_hider_final.pt", obs_dim, act_dim)
+    ref_hiders = [(int(r.id), load_policy(Path(r.ts_dir) / "policy_hider_final.pt",
+                                          obs_dim, act_dim))
+                  for _, r in ref_rows.iterrows()]
 
+    # Behavior features averaged over the reference panel; wr kept per-ref
+    # in wide columns (wr_ref<id>) for dispersion diagnostics.
     rows = []
+    num_cols = ["wr", "mean_tag_time", "mean_path_len", "mean_speed",
+                "mean_dist", "frac_center", "frac_wall", "final_radius"]
     for _, r in idx.iterrows():
         ts = Path(r.ts_dir)
         seeker = load_policy(ts / "policy_seeker_final.pt", obs_dim, act_dim)
-        feats = collect_features(seeker, ref_hider, env_cfg, args.episodes)
+        per_ref = {rid: collect_features(seeker, h, env_cfg, args.episodes)
+                   for rid, h in ref_hiders}
+        feats = {c: float(np.mean([f[c] for f in per_ref.values()])) for c in num_cols}
+        for rid, f in per_ref.items():
+            feats[f"wr_ref{rid}"] = f["wr"]
         feats.update(dict(id=int(r.id), source=r.source, reward=r.reward,
                           A=float(r.A), seed=int(r.seed)))
         rows.append(feats)
@@ -201,9 +226,12 @@ def main():
     df = pd.DataFrame(rows)
     df.to_csv(OUT_DIR / "behavior_features.csv", index=False)
 
-    # PCA on standardized features
+    # PCA on standardized BEHAVIOR features only. mean_tag_time is excluded:
+    # it is computed over tagged episodes only (a success proxy — outcome
+    # leakage inside a behavior fingerprint that gets correlated with the
+    # outcome SVD). It stays in the CSV for descriptive use.
     feat_cols = ["mean_path_len", "mean_speed", "mean_dist", "frac_center",
-                 "frac_wall", "final_radius", "mean_tag_time"]
+                 "frac_wall", "final_radius"]
     X = df[feat_cols].to_numpy()
     Xs = (X - X.mean(0)) / (X.std(0) + 1e-9)
     U, S, Vt = np.linalg.svd(Xs - Xs.mean(0), full_matrices=False)
@@ -227,15 +255,18 @@ def main():
         print(f"(SVD cross-link skipped: {e})", file=sys.stderr)
 
     lines = []
+    ref_desc = ",".join(str(rid) for rid, _ in ref_hiders)
     lines.append("=== Design C behavior analysis ===")
-    lines.append(f"Pool: {len(idx)} policies; reference hider id={ref_id}")
-    lines.append(f"Episodes per seeker: {args.episodes}")
+    lines.append(f"Pool: {len(idx)} policies; reference hiders: ids {ref_desc}")
+    lines.append(f"Episodes per seeker per reference: {args.episodes}")
     lines.append("")
     lines.append("PC1 share of behavior variance: %.3f" % explained[0])
     lines.append("PC2 share of behavior variance: %.3f" % explained[1])
     if corr_pc1_u1 is not None:
         lines.append(f"Correlation behavior PC1 vs outcome SVD U1: {corr_pc1_u1:+.3f}")
         lines.append(f"Correlation behavior PC2 vs outcome SVD U2: {corr_pc2_u2:+.3f}")
+        lines.append("  (signs of PC2/U2 are arbitrary and component order is "
+                     "noise-fragile; only |corr| of PC1-U1 feeds the verdict)")
         if abs(corr_pc1_u1) > 0.7:
             lines.append("  → behavior PC1 strongly aligned with skill axis (high-WR seekers behave similarly)")
         else:
@@ -272,7 +303,7 @@ def main():
                         fontsize=8, ha="center", va="center")
         ax.set_xlabel(f"behavior PC1 ({explained[0]*100:.1f}% var)")
         ax.set_ylabel(f"behavior PC2 ({explained[1]*100:.1f}% var)")
-        ax.set_title(f"Behavior fingerprint (vs reference hider id={ref_id})")
+        ax.set_title(f"Behavior fingerprint (vs reference hiders {ref_desc})")
         ax.grid(alpha=0.3); ax.axhline(0, color="grey", lw=0.5); ax.axvline(0, color="grey", lw=0.5)
         from matplotlib.lines import Line2D
         legend = [

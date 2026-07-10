@@ -41,15 +41,28 @@ from design_c_anchor_panel_eval import GROUPS, OUT_DIR
 
 
 def collect_hider_features(seeker, hider, env_config, n_episodes):
-    """Roll out n_episodes; return aggregated HIDER trajectory features."""
+    """Roll out n_episodes; return aggregated HIDER trajectory features.
+
+    Role indexing: VecTagEnv randomizes agent-slot/role assignment per reset
+    (env.seeker_idx), so the hider is slot 1-seeker_idx, not slot 1. The
+    pre-2026-07 version indexed slot 1 directly, scrambling roles in ~50% of
+    episodes (hider_survival was unaffected; positional features were).
+    """
     env = VecTagEnv(num_envs=n_episodes, config=env_config)
     obs = env.reset()
+    env_ids = np.arange(n_episodes)
     active = np.ones(n_episodes, dtype=bool)
     tagged = np.zeros(n_episodes, dtype=bool)
     steps_taken = np.zeros(n_episodes, dtype=np.int32)
 
+    # Thresholds as fractions of the real arena half-extent (cfg.arena_half
+    # = 15.0; the old constants 3.0/6.0 assumed 7.5).
+    half = env_config.arena_half
+    center_thresh = 0.4 * half
+    wall_thresh = 0.8 * half
+
     path_len = np.zeros(n_episodes, dtype=np.float32)
-    last_pos = env.positions[:, 1].copy()  # hider is index 1
+    last_pos = env.positions[env_ids, 1 - env.seeker_idx].copy()
     dist_sum = np.zeros(n_episodes, dtype=np.float32)
     time_in_center = np.zeros(n_episodes, dtype=np.float32)
     time_at_wall = np.zeros(n_episodes, dtype=np.float32)
@@ -67,14 +80,14 @@ def collect_hider_features(seeker, hider, env_config, n_episodes):
                 "tagged", np.zeros(n_episodes, dtype=bool))[newly_done]
             steps_taken[newly_done] = step + 1
 
-        cur_pos = env.positions[:, 1]  # hider
-        seeker_pos = env.positions[:, 0]
+        cur_pos = env.positions[env_ids, 1 - env.seeker_idx]
+        seeker_pos = env.positions[env_ids, env.seeker_idx]
         diff = cur_pos - last_pos
         path_len[active] += np.linalg.norm(diff[active], axis=-1)
         dist_sum[active] += np.linalg.norm((cur_pos - seeker_pos)[active], axis=-1)
-        in_center = (np.abs(cur_pos[:, 0]) < 3.0) & (np.abs(cur_pos[:, 1]) < 3.0)
+        in_center = (np.abs(cur_pos[:, 0]) < center_thresh) & (np.abs(cur_pos[:, 1]) < center_thresh)
         time_in_center[active & in_center] += 1
-        at_wall = (np.abs(cur_pos[:, 0]) > 6.0) | (np.abs(cur_pos[:, 1]) > 6.0)
+        at_wall = (np.abs(cur_pos[:, 0]) > wall_thresh) | (np.abs(cur_pos[:, 1]) > wall_thresh)
         time_at_wall[active & at_wall] += 1
 
         last_pos = cur_pos.copy()
