@@ -19,11 +19,15 @@ from typing import List, Optional
 import json
 
 
+DEFAULT_A_VALUES = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 0.9]
+
+
 @dataclass
 class ExperimentConfig:
     name: str
     latest_prob: float
     use_seeker_zoo: bool
+    seed: Optional[int] = None
     timesteps: int = 10_000_000  # Match stable training
     layout: str = "four_corners"
     enable_sprint: bool = False
@@ -32,20 +36,38 @@ class ExperimentConfig:
     algorithm: str = "ppo"  # "ppo" or "sac"
 
 
-def get_experiments(algorithm: str = "ppo") -> List[ExperimentConfig]:
-    """Define all experiment configurations."""
+def get_experiments(algorithm: str = "ppo",
+                    a_values: Optional[List[float]] = None,
+                    num_seeds: int = 1) -> List[ExperimentConfig]:
+    """Define all experiment configurations.
+
+    Args:
+        algorithm: "ppo" or "sac"
+        a_values: List of A values to sweep (zoo sampling probability).
+                  NOTE: These are A values, not latest_prob. Converted internally.
+        num_seeds: Number of seeds per configuration.
+    """
+    if a_values is None:
+        a_values = DEFAULT_A_VALUES
+
     experiments = []
 
-    for A in [0.0, 0.05, 0.1, 0.2]:
+    for A in a_values:
+        latest_prob = 1.0 - A  # Convert A -> legacy --latest-prob
         for use_seeker_zoo in [False, True]:
             zoo_mode = "both" if use_seeker_zoo else "hider_only"
-            name = f"A{int(A*100):02d}_{zoo_mode}"
-            experiments.append(ExperimentConfig(
-                name=name,
-                latest_prob=A,
-                use_seeker_zoo=use_seeker_zoo,
-                algorithm=algorithm,
-            ))
+            for seed in range(num_seeds):
+                if num_seeds > 1:
+                    name = f"A{int(A*100):02d}__{zoo_mode}/seed_{seed}"
+                else:
+                    name = f"A{int(A*100):02d}_{zoo_mode}"
+                experiments.append(ExperimentConfig(
+                    name=name,
+                    latest_prob=latest_prob,
+                    use_seeker_zoo=use_seeker_zoo,
+                    seed=seed if num_seeds > 1 else None,
+                    algorithm=algorithm,
+                ))
 
     return experiments
 
@@ -85,6 +107,9 @@ def run_experiment(exp: ExperimentConfig, output_base: str, resume: bool = False
         "--hider-speed-mult", str(exp.hider_speed_mult),
         "--sprint-speed-mult", str(exp.sprint_speed_mult),
     ]
+
+    if exp.seed is not None:
+        cmd.extend(["--seed", str(exp.seed)])
 
     if exp.use_seeker_zoo:
         cmd.append("--use-seeker-zoo")
@@ -137,10 +162,20 @@ def main():
     parser.add_argument("--algorithm", type=str, default="ppo",
                         choices=["ppo", "sac"],
                         help="Training algorithm (default: ppo)")
+    parser.add_argument("--a-values", type=float, nargs="+",
+                        default=None,
+                        help="A values to sweep (zoo sampling prob). "
+                             f"Default: {DEFAULT_A_VALUES}")
+    parser.add_argument("--seeds", type=int, default=1,
+                        help="Number of seeds per configuration (default: 1)")
 
     args = parser.parse_args()
 
-    experiments = get_experiments(algorithm=args.algorithm)
+    experiments = get_experiments(
+        algorithm=args.algorithm,
+        a_values=args.a_values,
+        num_seeds=args.seeds,
+    )
 
     print("="*60)
     print("ZOO TRAINING SWEEP")
@@ -153,7 +188,9 @@ def main():
 
     for i, exp in enumerate(experiments):
         marker = " <-- START" if i == args.start_index else ""
-        print(f"  [{i}] {exp.name}: A={exp.latest_prob}, seeker_zoo={exp.use_seeker_zoo}, algo={exp.algorithm}{marker}")
+        A_val = 1.0 - exp.latest_prob
+        seed_str = f", seed={exp.seed}" if exp.seed is not None else ""
+        print(f"  [{i}] {exp.name}: A={A_val:.2f}, seeker_zoo={exp.use_seeker_zoo}, algo={exp.algorithm}{seed_str}{marker}")
 
     if args.dry_run:
         print("\n[DRY RUN] Would execute above experiments")
