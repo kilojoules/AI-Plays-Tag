@@ -149,7 +149,13 @@ Concretely, examining the 18 R7 final seekers individually:
 - Bottom: R7/A=0.0/seed_4 reaches **0.28** gauntlet WR (below mean R4!)
 
 The R4 final seekers all sit in [0.19, 0.30] gauntlet WR. The R4 cluster
-has a unique attractor; the R7 cluster is multimodal.
+has a unique attractor; the R7 cluster is multimodal. [Correction
+2026-07: false against the archived 32-policy gauntlet — both R4 seed-4
+runs land outside: A=0 → 0.370, A=0.5 → 0.432 (range [0.20, 0.43], not
+[0.19, 0.30]). R4's spread is still ~3× narrower than R7's [0.27, 1.00]
+and the σ contrast stands, but "unique attractor" overstates it. That
+the two outliers are the *same seed* in both A cells is direct evidence
+of the shared-init seed pairing (§18.4). See §18.7.]
 
 This finding is robust across the data refresh (24 policies → 32
 policies; pooled σ → heteroscedastic σ). It is *not* an artifact of
@@ -809,3 +815,16 @@ GAE-sensitivity footnote and the σ claims a partial re-run.
   calibrated transitive null predicts ~93% in component 1; observed 61%).
 - §8's "Analysis (GLM + VB + MCMC ×2)" line and the "17–47 min"
   gauntlet times are unverifiable post-LUMI; treated as approximate.
+- §2's "R4 finals all in [0.19, 0.30], unique attractor" is false
+  against the archived 32-policy gauntlet: both R4 seed-4 runs exceed
+  it (0.370 at A=0, 0.432 at A=0.5). The heteroscedasticity contrast
+  survives (R4 range 0.23 vs R7 range 0.73) but R4 is not a point mass
+  — and the same-seed-in-both-cells outlier pattern is direct evidence
+  of shared-init seed pairing.
+- Data restoration: the 32-policy gauntlet CSVs, MCMC/SVD/GLMM
+  summaries, and the anchor panel (~2.5 MB) were restored from the gbar
+  rescue copy into git on 2026-07-10. Restored data verifies the §1
+  cell means (0.259/0.253/0.620/0.758) exactly, confirms uniform
+  n=100 (§18.1), and verifies the R7 extremes; the §2 R4 range was the
+  one discrepancy found. Training checkpoints (4.3 GB) remain on gbar
+  home only.

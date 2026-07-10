@@ -1,0 +1,41 @@
+=== Design C analysis ===
+Episodes: 99200  (self-pairs excluded)
+Pool size: 32 seekers x 32 hiders
+
+Cell means (seeker WR vs pool):
+  seeker_reward  seeker_A     n       wr       se    ci_lo    ci_hi
+      R4_sparse       0.0 18600 0.258602 0.003211 0.252310 0.264895
+      R4_sparse       0.5 18600 0.252849 0.003187 0.246603 0.259096
+R7_kitchen_sink       0.0 31000 0.619968 0.002757 0.614564 0.625371
+R7_kitchen_sink       0.5 31000 0.758161 0.002432 0.753395 0.762928
+
+--- GLM (cluster-robust SE on seeker_id) ---
+β_RA = 0.6834  SE = 0.5250  CI95 = [-0.3456, 1.7125]  p = 0.193
+VERDICT (GLM): REFINE (|beta|=0.683, CI [-0.346, 1.712])
+
+--- Bayesian mixed model (VB BinomialBayesMixedGLM) ---
+β_RA = 0.7422  SD = 0.0137  CrI95 = [0.7154, 0.7691]
+VERDICT (Bayes): PURSUE (|beta|=0.742 >= 0.223, CI excludes 0)
+
+Pre-reg thresholds (log-odds): PURSUE >= 0.223, KILL < 0.095
+
+=== GLM full summary ===
+                 Generalized Linear Model Regression Results                  
+==============================================================================
+Dep. Variable:                    won   No. Observations:                99200
+Model:                            GLM   Df Residuals:                    99196
+Model Family:                Binomial   Df Model:                            3
+Link Function:                  Logit   Scale:                          1.0000
+Method:                          IRLS   Log-Likelihood:                -58884.
+Date:                Tue, 12 May 2026   Deviance:                   1.1777e+05
+Time:                        06:22:47   Pearson chi2:                 9.92e+04
+No. Iterations:                     5   Pseudo R-squ. (CS):             0.1782
+Covariance Type:              cluster                                         
+==============================================================================
+                 coef    std err          z      P>|z|      [0.025      0.975]
+------------------------------------------------------------------------------
+const         -1.0532      0.119     -8.861      0.000      -1.286      -0.820
+R              1.5427      0.287      5.377      0.000       0.980       2.105
+A_bin         -0.0302      0.215     -0.140      0.888      -0.452       0.392
+RA             0.6834      0.525      1.302      0.193      -0.346       1.712
+==============================================================================

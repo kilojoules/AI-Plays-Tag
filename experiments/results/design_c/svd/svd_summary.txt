@@ -1,0 +1,82 @@
+=== Design C SVD diagnostic ===
+Pool size: 32
+Grand mean WR: 0.5266
+
+Singular value spectrum (centered matrix):
+  σ_1 = 8.8112   explained = 0.6130   cumulative = 0.6130
+  σ_2 = 4.5543   explained = 0.1638   cumulative = 0.7768
+  σ_3 = 3.6883   explained = 0.1074   cumulative = 0.8842
+  σ_4 = 2.7157   explained = 0.0582   cumulative = 0.9424
+  σ_5 = 1.3660   explained = 0.0147   cumulative = 0.9571
+  σ_6 = 0.9470   explained = 0.0071   cumulative = 0.9642
+  σ_7 = 0.8619   explained = 0.0059   cumulative = 0.9701
+  σ_8 = 0.8188   explained = 0.0053   cumulative = 0.9754
+  σ_9 = 0.6208   explained = 0.0030   cumulative = 0.9784
+  σ_10 = 0.6004   explained = 0.0028   cumulative = 0.9813
+  σ_11 = 0.5844   explained = 0.0027   cumulative = 0.9840
+  σ_12 = 0.5430   explained = 0.0023   cumulative = 0.9863
+  σ_13 = 0.5118   explained = 0.0021   cumulative = 0.9884
+  σ_14 = 0.5032   explained = 0.0020   cumulative = 0.9904
+  σ_15 = 0.4625   explained = 0.0017   cumulative = 0.9920
+  σ_16 = 0.3946   explained = 0.0012   cumulative = 0.9933
+  σ_17 = 0.3885   explained = 0.0012   cumulative = 0.9945
+  σ_18 = 0.3798   explained = 0.0011   cumulative = 0.9956
+  σ_19 = 0.3495   explained = 0.0010   cumulative = 0.9966
+  σ_20 = 0.3099   explained = 0.0008   cumulative = 0.9973
+  σ_21 = 0.2909   explained = 0.0007   cumulative = 0.9980
+  σ_22 = 0.2531   explained = 0.0005   cumulative = 0.9985
+  σ_23 = 0.2181   explained = 0.0004   cumulative = 0.9989
+  σ_24 = 0.1996   explained = 0.0003   cumulative = 0.9992
+  σ_25 = 0.1882   explained = 0.0003   cumulative = 0.9995
+  σ_26 = 0.1627   explained = 0.0002   cumulative = 0.9997
+  σ_27 = 0.1487   explained = 0.0002   cumulative = 0.9999
+  σ_28 = 0.0898   explained = 0.0001   cumulative = 0.9999
+  σ_29 = 0.0813   explained = 0.0001   cumulative = 1.0000
+  σ_30 = 0.0548   explained = 0.0000   cumulative = 1.0000
+  σ_31 = 0.0251   explained = 0.0000   cumulative = 1.0000
+  σ_32 = 0.0058   explained = 0.0000   cumulative = 1.0000
+
+Rank-1 share (top SV² / total): 0.613
+Rank-2 share:                   0.164
+Rank-3 share:                   0.107
+
+INTERPRETATION: NON-TRANSITIVE / CYCLIC structure present
+  Second (and possibly later) components carry meaningful variance.
+  R7 seeds may be reaching genuinely different strategies that beat each other rock-paper-scissors style.
+  Story: 'rich reward enables strategic diversity; cyclic dominance among seeds'
+  Paper framing: REWARD-INDUCED STRATEGIC DIVERSITY
+
+Per-policy rank-1 skill scores (seeker side):
+ id source          reward   A  seed  row_mean_wr  U1_seeker  U2_seeker
+ 21   grid R7_kitchen_sink 0.5     2        0.988      0.292     -0.074
+ 19   grid R7_kitchen_sink 0.5     0        0.984      0.292     -0.048
+ 24   grid R7_kitchen_sink 0.5     5        0.953      0.270     -0.046
+ 22   grid R7_kitchen_sink 0.5     3        0.935      0.261     -0.003
+ 12   grid R7_kitchen_sink 0.0     2        0.927      0.259      0.008
+ 26   grid R7_kitchen_sink 0.5     7        0.923      0.257     -0.033
+ 11   grid R7_kitchen_sink 0.0     1        0.812      0.194      0.083
+ 17   grid R7_kitchen_sink 0.0     7        0.813      0.190      0.052
+ 20   grid R7_kitchen_sink 0.5     1        0.795      0.176     -0.008
+ 16   grid R7_kitchen_sink 0.0     6        0.713      0.119      0.115
+ 30 anchor R7_kitchen_sink 0.0    42        0.643      0.085      0.284
+ 25   grid R7_kitchen_sink 0.5     6        0.614      0.079      0.303
+ 15   grid R7_kitchen_sink 0.0     5        0.552      0.008     -0.215
+ 13   grid R7_kitchen_sink 0.0     3        0.475     -0.006      0.381
+ 23   grid R7_kitchen_sink 0.5     4        0.447     -0.028      0.322
+ 10   grid R7_kitchen_sink 0.0     0        0.510     -0.031     -0.276
+ 27   grid R7_kitchen_sink 0.5     8        0.432     -0.035      0.391
+ 31 anchor R7_kitchen_sink 0.5    42        0.472     -0.044      0.040
+  9   grid       R4_sparse 0.5     4        0.435     -0.061      0.184
+ 18   grid R7_kitchen_sink 0.0     8        0.462     -0.069     -0.290
+  4   grid       R4_sparse 0.0     4        0.372     -0.080      0.298
+ 14   grid R7_kitchen_sink 0.0     4        0.278     -0.156      0.048
+ 28 anchor       R4_sparse 0.0    42        0.288     -0.162     -0.179
+  6   grid       R4_sparse 0.5     1        0.249     -0.171      0.100
+  1   grid       R4_sparse 0.0     1        0.239     -0.181      0.069
+  7   grid       R4_sparse 0.5     2        0.227     -0.192     -0.018
+  3   grid       R4_sparse 0.0     3        0.244     -0.196     -0.037
+ 29 anchor       R4_sparse 0.5    42        0.226     -0.198     -0.087
+  2   grid       R4_sparse 0.0     2        0.216     -0.205      0.043
+  0   grid       R4_sparse 0.0     0        0.220     -0.207     -0.001
+  5   grid       R4_sparse 0.5     0        0.202     -0.213      0.023
+  8   grid       R4_sparse 0.5     3        0.204     -0.214      0.010
