@@ -2,22 +2,30 @@
 """
 Design C cross-evaluation gauntlet.
 
-Loads all 12 main-grid + 4 anchor PPO finals, runs every-vs-every cross-eval
-with 3-stage successive halving on episode count (see pre-reg v2 §6).
+Loads all main-grid + anchor PPO finals and runs every-vs-every cross-eval
+at a FIXED 100 episodes per matchup.
 
-Stage 1: 10 episodes per matchup (all 16×16 = 256 matchups)
-Stage 2: continue to 30 ep where Wilson 95% CI for p crosses 0.5 ± 0.10
-Stage 3: continue to 100 ep where Wilson 95% CI for p crosses 0.5 ± 0.05
+History: this script originally implemented pre-reg v1 §6 "3-stage
+successive halving" (10 → 30 → 100 episodes, escalating on Wilson CI
+ambiguity). The 2026-07 adversarial review proved the escalation
+thresholds were mathematically unreachable — the minimum possible Wilson
+95% half-width is 0.139 at n=10 (> 0.10) and 0.057 at n=30 (> 0.05) — so
+every matchup always ran all 100 episodes and the adaptive mechanism
+never fired. All existing gauntlet data (24-policy and 32-policy runs)
+is therefore uniform n=100. The dead machinery is removed rather than
+"fixed": the downstream GLMM/MCMC fit per-episode rows with no weights,
+and a *working* halving would over-sample ambiguous matchups and bias
+exactly those analyses. Uniform n is a feature.
 
 Outputs (under experiments/results/design_c/gauntlet/):
   matchups_long.csv  — one row per episode (seeker_id, hider_id, episode_idx, won)
-  matchups_summary.csv — one row per matchup (n, wins, wr, ci_lo, ci_hi, stage)
+  matchups_summary.csv — one row per matchup (n, wins, wr, ci_lo, ci_hi, self_pair)
   policy_index.csv   — id, source, reward, A, seed, path
 
 Usage:
   python experiments/design_c_gauntlet.py             # run full gauntlet
   python experiments/design_c_gauntlet.py --dry-run   # list policies and matchup count
-  python experiments/design_c_gauntlet.py --episodes 10  # single-stage override
+  python experiments/design_c_gauntlet.py --episodes 10  # smaller fixed budget
 """
 from __future__ import annotations
 
@@ -51,14 +59,10 @@ ANCHOR_SEED = 42
 # Grid seeds are auto-discovered from the directory tree so REFINE rounds
 # (extra seeds added later) get folded in without code edits.
 
-# Successive-halving stages: (cumulative_episodes, half_width_threshold)
-# A matchup advances to the next stage iff its Wilson 95% CI half-width
-# at the current stage is wider than the threshold (i.e., still ambiguous).
-STAGES = [
-    (10, 0.10),
-    (30, 0.05),
-    (100, None),  # final stage; None means "no further escalation"
-]
+# Fixed episode budget per matchup. See module docstring for why the
+# former successive-halving STAGES were removed (vacuous thresholds;
+# uniform n also keeps the per-episode GLMM/MCMC unweighted and unbiased).
+EPISODES_PER_MATCHUP = 100
 
 MAX_STEPS = 200
 HSM = 1.15
@@ -168,7 +172,7 @@ def play_episodes(seeker: PPOAgent, hider: PPOAgent, env_config: TagEnvConfig,
     return tagged.astype(np.int8)
 
 
-# ── Wilson CI + halving ─────────────────────────────────────────────
+# ── Wilson CI (summary intervals only) ──────────────────────────────
 
 def wilson_ci(k: int, n: int, alpha: float = 0.05) -> Tuple[float, float, float]:
     """Wilson score interval for a binomial proportion. Returns (p_hat, lo, hi)."""
@@ -180,14 +184,6 @@ def wilson_ci(k: int, n: int, alpha: float = 0.05) -> Tuple[float, float, float]
     centre = (p + z * z / (2 * n)) / denom
     halfw = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
     return p, max(0.0, centre - halfw), min(1.0, centre + halfw)
-
-
-def is_ambiguous(k: int, n: int, half_threshold: float) -> bool:
-    """A matchup is still ambiguous iff its Wilson 95% CI half-width > half_threshold
-       OR the CI brackets 0.5 (the analytically interesting boundary)."""
-    p, lo, hi = wilson_ci(k, n)
-    halfw = (hi - lo) / 2.0
-    return halfw > half_threshold or (lo < 0.5 < hi)
 
 
 # ── Main gauntlet ───────────────────────────────────────────────────
@@ -228,45 +224,14 @@ def run_gauntlet(dry_run: bool = False, episodes_override: int | None = None):
 
     # Per-matchup running outcomes (i = seeker id, j = hider id).
     outcomes: Dict[Tuple[int, int], List[int]] = {(i, j): [] for i in range(n) for j in range(n)}
-    final_stage: Dict[Tuple[int, int], int] = {}
 
-    if episodes_override is not None:
-        stages = [(episodes_override, None)]
-    else:
-        stages = STAGES
-
-    active = set(outcomes.keys())
-    for stage_idx, (cum_ep, halt_threshold) in enumerate(stages, start=1):
-        print(f"\n=== Stage {stage_idx}: cumulative_episodes={cum_ep}, threshold={halt_threshold} ===")
-        print(f"  Matchups still active: {len(active)}")
-        for k, (i, j) in enumerate(sorted(active), start=1):
-            have = len(outcomes[(i, j)])
-            need = cum_ep - have
-            if need > 0:
-                new = play_episodes(seekers[i], hiders[j], env_config, need)
-                outcomes[(i, j)].extend(int(x) for x in new)
-            if k % 25 == 0 or k == len(active):
-                print(f"    [{k}/{len(active)}] (i={i}, j={j}) n={len(outcomes[(i,j)])} k={sum(outcomes[(i,j)])}")
-        # Decide which matchups advance to the next stage.
-        if halt_threshold is None:
-            # Final stage: lock in current stage for all still-active matchups.
-            for key in active:
-                final_stage[key] = stage_idx
-            active = set()
-            break
-        new_active = set()
-        for key in active:
-            k_ = sum(outcomes[key])
-            n_ = len(outcomes[key])
-            if is_ambiguous(k_, n_, halt_threshold):
-                new_active.add(key)
-            else:
-                final_stage[key] = stage_idx
-        active = new_active
-
-    # Anything still active after all stages = locked at final stage's count.
-    for key in active:
-        final_stage[key] = len(stages)
+    n_ep = episodes_override if episodes_override is not None else EPISODES_PER_MATCHUP
+    print(f"\n=== Fixed budget: {n_ep} episodes per matchup ===")
+    for k, (i, j) in enumerate(sorted(outcomes.keys()), start=1):
+        new = play_episodes(seekers[i], hiders[j], env_config, n_ep)
+        outcomes[(i, j)].extend(int(x) for x in new)
+        if k % 25 == 0 or k == len(outcomes):
+            print(f"    [{k}/{len(outcomes)}] (i={i}, j={j}) n={len(outcomes[(i,j)])} k={sum(outcomes[(i,j)])}")
 
     # ── Write outputs ─────────────────────────────────────────────
     long_path = OUT_DIR / "matchups_long.csv"
@@ -285,7 +250,7 @@ def run_gauntlet(dry_run: bool = False, episodes_override: int | None = None):
             "seeker_id", "hider_id",
             "seeker_reward", "seeker_A", "seeker_seed", "seeker_source",
             "hider_reward", "hider_A", "hider_seed", "hider_source",
-            "n", "wins", "wr", "ci_lo", "ci_hi", "stage_reached", "self_pair",
+            "n", "wins", "wr", "ci_lo", "ci_hi", "self_pair",
         ])
         by_id = {p["id"]: p for p in pool}
         for (i, j), outs in outcomes.items():
@@ -298,7 +263,7 @@ def run_gauntlet(dry_run: bool = False, episodes_override: int | None = None):
                 i, j,
                 si["reward"], si["A"], si["seed"], si["source"],
                 hj["reward"], hj["A"], hj["seed"], hj["source"],
-                n_, k_, p_, lo, hi, final_stage.get((i, j), 1), int(is_self),
+                n_, k_, p_, lo, hi, int(is_self),
             ])
 
     print(f"\nWrote:")
@@ -311,7 +276,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="List pool and matchup count, don't play")
     ap.add_argument("--episodes", type=int, default=None,
-                    help="Override stages: run a single fixed-N gauntlet (skip successive halving)")
+                    help=f"Episodes per matchup (default {EPISODES_PER_MATCHUP})")
     args = ap.parse_args()
     run_gauntlet(dry_run=args.dry_run, episodes_override=args.episodes)
 
