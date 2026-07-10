@@ -52,6 +52,11 @@ class ZooTrainConfig:
     train_iters: int = 10
     target_kl: float = 0.02
     entropy_coef: float = 0.01
+    # Reproduce the pre-2026-07 GAE done-mask off-by-one (terminal
+    # transitions bootstrapped gamma*V(next episode's reset state)).
+    # All Design C runs through the v3 power extension trained with the
+    # bug; pass --legacy-gae for new runs that must be comparable to them.
+    legacy_gae: bool = False
 
     # Zoo parameters
     latest_opponent_prob: float = 0.1  # 1-A: probability of latest opponent (A = zoo prob)
@@ -193,7 +198,20 @@ class RolloutBuffer:
         self.ptr = 0
 
     def compute_returns_and_advantages(self, last_values: np.ndarray,
-                                       gamma: float, gae_lambda: float) -> Tuple[np.ndarray, ...]:
+                                       gamma: float, gae_lambda: float,
+                                       legacy_gae: bool = False) -> Tuple[np.ndarray, ...]:
+        """GAE over the rollout.
+
+        dones[t] means "the transition taken at step t ended its episode"
+        (buffer.add stores env.step's done flag with that step's own row),
+        so both the bootstrap and the GAE recursion must be cut by
+        dones[t]. The pre-2026-07 code cut by dones[t+1]: terminal
+        transitions bootstrapped gamma*V(next episode's reset state) —
+        obs[t+1] is post-auto_reset — and the step before a terminal was
+        cut one step early. The error is worst when |V(reset)| is large
+        (dense-reward runs). legacy_gae=True reproduces it for
+        comparability with runs trained before the fix.
+        """
         obs = np.stack(self.obs_list)
         actions = np.stack(self.actions_list)
         rewards = np.stack(self.rewards_list)
@@ -206,14 +224,12 @@ class RolloutBuffer:
         last_gae = 0
 
         for t in reversed(range(T)):
-            if t == T - 1:
-                next_value = last_values
-                next_done = np.zeros(N)
+            next_value = last_values if t == T - 1 else values[t + 1]
+            if legacy_gae:
+                next_done = np.zeros(N) if t == T - 1 else dones[t + 1]
+                mask = 1.0 - next_done.astype(np.float32)
             else:
-                next_value = values[t + 1]
-                next_done = dones[t + 1]
-
-            mask = 1.0 - next_done.astype(np.float32)
+                mask = 1.0 - dones[t].astype(np.float32)
             delta = rewards[t] + gamma * next_value * mask - values[t]
             advantages[t] = last_gae = delta + gamma * gae_lambda * mask * last_gae
 
@@ -451,7 +467,8 @@ class ZooTrainer:
         """Run PPO update for a single role."""
         obs, actions, log_probs_old, returns, advantages = \
             buffer.compute_returns_and_advantages(
-                last_values, self.config.gamma, self.config.gae_lambda)
+                last_values, self.config.gamma, self.config.gae_lambda,
+                legacy_gae=self.config.legacy_gae)
 
         info = self.policies[role].update(
             obs, actions, log_probs_old, returns, advantages
@@ -520,6 +537,7 @@ class ZooTrainer:
                 'sampling_strategy': self.config.sampling_strategy,
                 'total_timesteps': self.config.total_timesteps,
                 'lr': self.config.lr,
+                'legacy_gae': self.config.legacy_gae,
             },
             'zoo_stats': {
                 'hider_zoo_final_size': len(self.hider_zoo),
@@ -747,6 +765,9 @@ def main():
                         help="Random seed for reproducibility")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from an existing run directory (the timestamped subdir)")
+    parser.add_argument("--legacy-gae", action="store_true",
+                        help="Reproduce the pre-2026-07 GAE done-mask off-by-one "
+                             "(for comparability with Design C runs trained before the fix)")
 
     args = parser.parse_args()
 
@@ -772,6 +793,7 @@ def main():
         zoo_max_size=args.zoo_max_size,
         sampling_strategy=args.sampling_strategy,
         output_dir=args.output_dir,
+        legacy_gae=args.legacy_gae,
     )
 
     env_config = TagEnvConfig(
