@@ -95,7 +95,21 @@ def select_model(anch: pd.DataFrame, which: str):
 
 
 def fit(d: pd.DataFrame, fe_cols: list, draws: int, chains: int,
-        target_accept: float):
+        target_accept: float, pair_re: bool = False, seed_re: bool = False):
+    """Binomial GLMM with random intercepts u_run + v_anchor.
+
+    pair_re adds a per-(run, anchor) random effect (overdispersion).
+    Without it each Binomial(n=30) row is treated as exact given the
+    run+anchor intercepts, yet the panel data show large run x anchor
+    interaction (single seekers spanning 0.00-1.00 across anchors,
+    results.md section 9) — so intervals without pair_re are
+    anti-conservative. This is the robustness fit the section-7 verdict
+    must be checked against (2026-07 adversarial review).
+
+    seed_re adds a crossed random intercept per seed number: the same
+    seed gives bit-identical network init and env streams in every cell,
+    so cells are seed-paired, not independent.
+    """
     import pymc as pm
 
     run_codes, run_uniques = pd.factorize(d["run_id"])
@@ -104,9 +118,11 @@ def fit(d: pd.DataFrame, fe_cols: list, draws: int, chains: int,
     cell_of_run = (d.drop_duplicates("run_id").set_index("run_id")
                    .loc[run_uniques, "reward"])
     cell_codes, cell_uniques = pd.factorize(cell_of_run)
+    seed_codes, seed_uniques = pd.factorize(d["seed"])
 
     coords = {"run": list(run_uniques), "anchor": list(anch_uniques),
-              "cell": list(cell_uniques), "obs": np.arange(len(d))}
+              "cell": list(cell_uniques), "obs": np.arange(len(d)),
+              "seedgrp": list(map(int, seed_uniques))}
 
     with pm.Model(coords=coords) as model:
         beta_0 = pm.Normal("beta_0", 0, 2.5)
@@ -118,6 +134,14 @@ def fit(d: pd.DataFrame, fe_cols: list, draws: int, chains: int,
         v_anchor = pm.Normal("v_anchor", 0, sigma_anchor, dims="anchor")
 
         eta = beta_0 + u_run[run_codes] + v_anchor[anch_codes]
+        if pair_re:
+            sigma_pair = pm.HalfNormal("sigma_pair", 1.0)
+            u_pair = pm.Normal("u_pair", 0, sigma_pair, dims="obs")
+            eta = eta + u_pair
+        if seed_re:
+            sigma_seed = pm.HalfNormal("sigma_seed", 1.0)
+            u_seed = pm.Normal("u_seed", 0, sigma_seed, dims="seedgrp")
+            eta = eta + u_seed[seed_codes]
         for c in fe_cols:
             eta = eta + betas[c] * d[c].to_numpy(np.int8)
 
@@ -135,6 +159,9 @@ def report(idata, d, fe_cols, key, label, suffix, draws, chains):
 
     var_names = ["beta_0"] + [f"beta_{c}" for c in fe_cols] \
         + ["sigma_run", "sigma_anchor"]
+    for extra in ("sigma_pair", "sigma_seed"):
+        if extra in idata.posterior:
+            var_names.append(extra)
     summary = az.summary(idata, var_names=var_names, hdi_prob=0.95, round_to=4)
 
     post = idata.posterior[f"beta_{key}"].values.flatten()
@@ -152,6 +179,42 @@ def report(idata, d, fe_cols, key, label, suffix, draws, chains):
              f"P(beta > 0) = {p_gt_0:.4f}",
              "",
              f"VERDICT (section 7): {verdict(median, lo, hi)}"]
+
+    # Marginal (population-averaged) interaction in WR units. beta_XA is a
+    # CONDITIONAL log-odds coefficient — with sigma_run ~ 2 it is inflated
+    # by non-collapsibility relative to the marginal effect the section-7
+    # thresholds were calibrated against (2026-07 review). Logistic-normal
+    # approximation: p_marg = sigmoid(eta / sqrt(1 + 0.346 sigma_tot^2)).
+    if {"X", "A01", "XA"} <= set(fe_cols):
+        po = idata.posterior
+        b0 = po["beta_0"].values.flatten()
+        bX = po["beta_X"].values.flatten()
+        bA = po["beta_A01"].values.flatten()
+        bXA = po["beta_XA"].values.flatten()
+        srun = po["sigma_run"].values.reshape(-1, po["sigma_run"].shape[-1])
+        sanch = po["sigma_anchor"].values.flatten()
+        extra_var = np.zeros_like(sanch)
+        for v in ("sigma_pair", "sigma_seed"):
+            if v in po:
+                extra_var = extra_var + po[v].values.flatten() ** 2
+        cells = list(idata.posterior.coords["cell"].values)
+        cell_of = {0: cells.index(d[d.X == 0].reward.iloc[0]),
+                   1: cells.index(d[d.X == 1].reward.iloc[0])}
+
+        def marg(eta, x):
+            s2 = srun[:, cell_of[x]] ** 2 + sanch ** 2 + extra_var
+            return 1.0 / (1.0 + np.exp(-eta / np.sqrt(1.0 + 0.346 * s2)))
+
+        did = (marg(b0 + bX + bA + bXA, 1) - marg(b0 + bX, 1)) \
+            - (marg(b0 + bA, 0) - marg(b0, 0))
+        dmed = float(np.median(did))
+        dlo, dhi = np.quantile(did, [0.025, 0.975])
+        lines += ["",
+                  "--- marginal interaction (WR units, logistic-normal approx) ---",
+                  f"Delta-of-Delta = {dmed:+.4f}  95% CrI [{dlo:+.4f}, {dhi:+.4f}]",
+                  f"P(DiD > 0) = {float((did > 0).mean()):.4f}",
+                  "(conditional beta_XA is non-collapsibility-inflated; this is",
+                  " the population-averaged effect on the WR scale)"]
     out_txt = OUT_DIR / f"panel_mcmc_{suffix}.txt"
     out_txt.write_text("\n".join(lines))
     print("\n" + "\n".join(lines))
@@ -192,6 +255,12 @@ def main():
     ap.add_argument("--batch-check", action="store_true",
                     help="Model A only: add the prereg v3 trained_on_gbar "
                          "fixed effect (hardware batch sanity check).")
+    ap.add_argument("--pair-re", action="store_true",
+                    help="Add per-(run, anchor) random effect (overdispersion "
+                         "robustness; see fit() docstring).")
+    ap.add_argument("--seed-re", action="store_true",
+                    help="Add crossed per-seed random intercept (cells are "
+                         "seed-paired via identical init).")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -204,9 +273,16 @@ def main():
             fe_cols = fe_cols + ["gbar"]
             label += " + gbar batch check"
             suffix = "A_batchcheck"
+        if args.pair_re:
+            label += " + pair RE"
+            suffix += "_pairre"
+        if args.seed_re:
+            label += " + seed RE"
+            suffix += "_seedre"
         print(f"\n=== Fitting {label}: rows={len(d)} "
               f"runs={d.run_id.nunique()} ===")
-        idata = fit(d, fe_cols, args.draws, args.chains, args.target_accept)
+        idata = fit(d, fe_cols, args.draws, args.chains, args.target_accept,
+                    pair_re=args.pair_re, seed_re=args.seed_re)
         report(idata, d, fe_cols, key, label, suffix, args.draws, args.chains)
 
 

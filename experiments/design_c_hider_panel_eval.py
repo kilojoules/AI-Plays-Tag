@@ -35,7 +35,8 @@ sys.path.insert(0, str(ROOT))
 
 from trainer.tag_env import VecTagEnv, TagEnvConfig
 from design_c_trajectory_analysis import (
-    load_policy, batch_act, discover_run, GAUNTLET_DIR, HSM, LAYOUT, MAX_STEPS,
+    load_policy, batch_act, discover_run, localize,
+    GAUNTLET_DIR, HSM, LAYOUT, MAX_STEPS,
 )
 from design_c_anchor_panel_eval import GROUPS, OUT_DIR
 
@@ -128,7 +129,7 @@ def main():
                           ("R4_sparse", "probe_R4_A00")]:
         row = anchors[(anchors.reward == reward) & (anchors.A == 0.0)].iloc[0]
         probes.append((label,
-                       load_policy(Path(row.ts_dir) / "policy_seeker_final.pt",
+                       load_policy(localize(row.ts_dir) / "policy_seeker_final.pt",
                                    obs_dim, act_dim)))
     print(f"Probe seekers: {[p[0] for p in probes]}")
     print(f"Episodes per (probe, hider): {args.episodes}\n")

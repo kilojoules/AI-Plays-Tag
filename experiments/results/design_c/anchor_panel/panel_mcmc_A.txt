@@ -1,0 +1,24 @@
+=== Model A (CONFIRMATORY, prereg 4.3): R4 vs R7 x A — PyMC NUTS ===
+rows=320  runs=80  anchors=4  draws=2000 x 4 chains
+
+                              mean      sd  hdi_2.5%  hdi_97.5%  mcse_mean  mcse_sd   ess_bulk   ess_tail   r_hat
+beta_0                     -0.8804  0.1775   -1.2550    -0.5471     0.0060   0.0053   904.2933   919.7525  1.0041
+beta_X                      1.5679  0.4512    0.6827     2.4457     0.0180   0.0094   625.1265  1223.1492  1.0082
+beta_A01                   -0.1641  0.2117   -0.5760     0.2533     0.0063   0.0042  1148.8917  1799.3321  1.0045
+beta_XA                     2.0625  0.6805    0.6756     3.3926     0.0265   0.0182   671.4858  1040.7675  1.0098
+sigma_run[R4_sparse]        0.6540  0.0883    0.4916     0.8285     0.0011   0.0010  6788.0900  5181.4775  1.0002
+sigma_run[R7_kitchen_sink]  2.0007  0.2766    1.4870     2.5406     0.0043   0.0035  4427.3452  4725.5336  1.0006
+sigma_anchor                0.1510  0.1604    0.0021     0.4291     0.0053   0.0138  1181.7174  1145.9597  1.0048
+
+--- beta_XA (key coefficient) ---
+posterior median = +2.0504
+95% CrI = [+0.7170, +3.4454]
+P(beta > 0) = 0.9989
+
+VERDICT (section 7): PURSUE (|beta|=2.050 >= 0.223, CrI excludes 0)
+
+--- marginal interaction (WR units, logistic-normal approx) ---
+Delta-of-Delta = +0.2608  95% CrI [+0.0856, +0.4321]
+P(DiD > 0) = 0.9986
+(conditional beta_XA is non-collapsibility-inflated; this is
+ the population-averaged effect on the WR scale)

@@ -47,6 +47,8 @@ COV_DIR = ROOT / "experiments" / "results" / "design_c" / "coverage_ablation"
 URG_DIR = ROOT / "experiments" / "results" / "design_c" / "urgency_ablation"
 URGONLY_DIR = ROOT / "experiments" / "results" / "design_c" / "urgency_only_ablation"
 ASW_DIR = ROOT / "experiments" / "results" / "design_c" / "a_sweep"
+MIXED_DIR = ROOT / "experiments" / "results" / "design_c" / "mixed_reward"
+GAECHK_DIR = ROOT / "experiments" / "results" / "design_c" / "gae_check"
 OUT_DIR = ROOT / "experiments" / "results" / "design_c" / "anchor_panel"
 
 # (reward label, A, base dir, seeds). Groups whose runs are missing are
@@ -64,6 +66,11 @@ GROUPS = [
     ("R7_no_coverage",  0.5,  COV_DIR,     list(range(5))),
     ("R7_no_cov_urg",   0.0,  URG_DIR,     list(range(10))),
     ("R7_no_urgency",   0.0,  URGONLY_DIR, list(range(10))),
+    # 2026-07 review follow-ups (results.md §18.5, §18.6)
+    ("R7sk_R4hd",       0.0,  MIXED_DIR,   list(range(10))),
+    ("R7sk_R4hd",       0.5,  MIXED_DIR,   list(range(10))),
+    ("R4_sparse_gaefix",       0.0, GAECHK_DIR, list(range(5))),
+    ("R7_kitchen_sink_gaefix", 0.0, GAECHK_DIR, list(range(5))),
 ]
 
 

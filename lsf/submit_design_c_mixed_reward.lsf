@@ -1,0 +1,37 @@
+#!/bin/bash
+#BSUB -J dc_mixed[1-20]%2
+#BSUB -q hpc
+#BSUB -n 8
+#BSUB -R "span[hosts=1]"
+#BSUB -R "rusage[mem=1GB]"
+#BSUB -W 4:00
+#BSUB -o logs/dc_mixed_%J_%I.out
+#BSUB -e logs/dc_mixed_%J_%I.err
+#BSUB -u /dev/null
+
+# Design C mixed-reward deconfound cells (results.md section 18.5):
+# R7sk_R4hd = R7 seeker-side shaping + R4 terminal-only hider,
+# A in {0, 0.5} x seeds 0-9, --legacy-gae for comparability.
+# %2 throttle: cleared for 2 nodes at a time on this project.
+
+set -euo pipefail
+HOMEREPO="$HOME/AI-Plays-Tag"
+JOBTMP="/tmp/${USER}_dcmx_${LSB_JOBID}_${LSB_JOBINDEX}"
+mkdir -p "$JOBTMP/repo"
+trap 'mkdir -p "$HOMEREPO/experiments/results"; rsync -a "$JOBTMP/repo/experiments/results/" "$HOMEREPO/experiments/results/" 2>/dev/null || true; rm -rf "$JOBTMP"' EXIT
+
+echo "=== Mixed-reward deconfound (LSF $LSB_JOBID[$LSB_JOBINDEX]) ==="
+echo "Host: $(hostname)   JOBTMP: $JOBTMP"
+echo "Date: $(date)"
+
+tar -C "$JOBTMP" -xzf "$HOMEREPO/pixi_env.tar.gz"   # -> $JOBTMP/.pixi
+rsync -a --exclude='.pixi' --exclude='results' --exclude='logs' \
+      --exclude='*.tar.gz' "$HOMEREPO/" "$JOBTMP/repo/"
+
+PY="$JOBTMP/.pixi/envs/default/bin/python"
+cd "$JOBTMP/repo"
+TASK_ID=$((LSB_JOBINDEX - 1))
+export OMP_NUM_THREADS=8
+"$PY" experiments/design_c_mixed_reward_tasks.py --task-id "$TASK_ID"
+
+echo "Done: $(date)"

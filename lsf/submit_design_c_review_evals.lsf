@@ -1,0 +1,55 @@
+#!/bin/bash
+#BSUB -J dc_revevals
+#BSUB -q hpc
+#BSUB -n 8
+#BSUB -R "span[hosts=1]"
+#BSUB -R "rusage[mem=2GB]"
+#BSUB -W 12:00
+#BSUB -o logs/dc_revevals_%J.out
+#BSUB -e logs/dc_revevals_%J.err
+#BSUB -u /dev/null
+
+# 2026-07 review follow-up evals (results.md section 18). Three parts:
+#  1. anchor-panel eval for the new cells (R7sk_R4hd, *_gaefix) —
+#     appended incrementally to anchor_panel.csv
+#  2. hider-panel re-measurement with role-correct features (the
+#     section-11 claim was retracted pending this)
+#  3. trajectory/behavior analysis re-run with role-correct features,
+#     arena-scaled thresholds, no outcome leakage, 4-anchor reference
+# Submit with -w 'done(<dc_gaechk jobid>)' so the new checkpoints exist
+# and the job stays within the 2-node clearance.
+# Unlike the training jobs this needs results/ as INPUT (checkpoints,
+# policy_index, svd embedding), so results/design_c is staged to /tmp.
+
+set -euo pipefail
+HOMEREPO="$HOME/AI-Plays-Tag"
+JOBTMP="/tmp/${USER}_dcre_${LSB_JOBID}"
+mkdir -p "$JOBTMP/repo"
+trap 'rsync -a "$JOBTMP/repo/experiments/results/design_c/anchor_panel/" "$HOMEREPO/experiments/results/design_c/anchor_panel/" 2>/dev/null || true; rsync -a "$JOBTMP/repo/experiments/results/design_c/behavior/" "$HOMEREPO/experiments/results/design_c/behavior/" 2>/dev/null || true; rm -rf "$JOBTMP"' EXIT
+
+echo "=== Review follow-up evals (LSF $LSB_JOBID) ==="
+echo "Host: $(hostname)   JOBTMP: $JOBTMP"
+echo "Date: $(date)"
+
+tar -C "$JOBTMP" -xzf "$HOMEREPO/pixi_env.tar.gz"
+rsync -a --exclude='.pixi' --exclude='logs' --exclude='*.tar.gz' \
+      --exclude='results' "$HOMEREPO/" "$JOBTMP/repo/"
+mkdir -p "$JOBTMP/repo/experiments/results"
+rsync -a "$HOMEREPO/experiments/results/design_c" \
+      "$JOBTMP/repo/experiments/results/"
+
+PY="$JOBTMP/.pixi/envs/default/bin/python"
+cd "$JOBTMP/repo"
+export OMP_NUM_THREADS=8
+
+echo "--- 1/3 anchor-panel eval: new cells (incremental) ---"
+"$PY" experiments/design_c_anchor_panel_eval.py --episodes 30 \
+      --skip-existing --append
+
+echo "--- 2/3 hider-panel re-measurement (role-correct) ---"
+"$PY" experiments/design_c_hider_panel_eval.py --episodes 30
+
+echo "--- 3/3 trajectory/behavior analysis (role-correct, 4-anchor) ---"
+"$PY" experiments/design_c_trajectory_analysis.py --episodes 30
+
+echo "Done: $(date)"

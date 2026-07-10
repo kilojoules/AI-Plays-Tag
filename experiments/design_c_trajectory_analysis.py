@@ -159,6 +159,14 @@ def collect_features(seeker: PPOAgent, hider: PPOAgent, env_config: TagEnvConfig
     )
 
 
+def localize(ts_dir) -> Path:
+    """policy_index.csv stores absolute paths from the machine that built it
+    (e.g. dead LUMI scratch). Re-root them at this repo's experiments/results."""
+    s = str(ts_dir)
+    i = s.find("experiments/results")
+    return ROOT / s[i:] if i >= 0 else Path(s)
+
+
 def discover_run(base: Path, reward: str, A: float, seed: int) -> Path | None:
     def _a_str(A): return f"A{int(A * 100):02d}"
     run_dir = base / reward / _a_str(A) / f"seed_{seed}"
@@ -198,7 +206,7 @@ def main():
     obs_dim, act_dim = env_probe.obs_dim, env_probe.act_dim
     env_cfg = TagEnvConfig(layout=LAYOUT, hider_speed_mult=HSM)
 
-    ref_hiders = [(int(r.id), load_policy(Path(r.ts_dir) / "policy_hider_final.pt",
+    ref_hiders = [(int(r.id), load_policy(localize(r.ts_dir) / "policy_hider_final.pt",
                                           obs_dim, act_dim))
                   for _, r in ref_rows.iterrows()]
 
@@ -208,7 +216,7 @@ def main():
     num_cols = ["wr", "mean_tag_time", "mean_path_len", "mean_speed",
                 "mean_dist", "frac_center", "frac_wall", "final_radius"]
     for _, r in idx.iterrows():
-        ts = Path(r.ts_dir)
+        ts = localize(r.ts_dir)
         seeker = load_policy(ts / "policy_seeker_final.pt", obs_dim, act_dim)
         per_ref = {rid: collect_features(seeker, h, env_cfg, args.episodes)
                    for rid, h in ref_hiders}

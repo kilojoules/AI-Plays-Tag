@@ -1,13 +1,22 @@
 # Design C — Results
 
-**Status:** Draft v3 (2026-06-13). Pre-reg v1, v2, v3 frozen in git; this
-document reports the realized results and their interpretation. Part I
-(§1–§8) is the 2026-05-14 draft, unchanged. Part II (§9–§15) reports the
-failure-mode arc: the 4-anchor eval correction, the basin/over-specialization
-taxonomy, the A dose-response, the coverage×urgency factorial, and the HSM
-flank. **§16 reports the prereg v3 power extension, which resolves the
-registered confirmatory test: PURSUE** (β_RA = +2.05 [+0.72, +3.45]).
-The claims ledger in §15 (updated) is the authoritative summary.
+**Status:** Draft v4 (2026-07-10). Part I (§1–§8) is the 2026-05-14 draft,
+kept verbatim except for bracketed `[Correction 2026-07: …]` notes. Part II
+(§9–§15) reports the failure-mode arc: the 4-anchor eval correction, the
+basin/over-specialization taxonomy, the A dose-response, the coverage×urgency
+factorial, and the HSM flank. **§16 reports the prereg v3 power extension,
+which resolves the registered confirmatory test: PURSUE**
+(β_RA = +2.05 [+0.72, +3.45]). **§18 records the 2026-07 adversarial review:
+errata, code bugs, pre-registration deviations, and the follow-up experiments
+they triggered.** The claims ledger in §15 (updated) is the authoritative
+summary, read jointly with §18.
+
+Provenance note (corrects the earlier "frozen in git" wording): pre-reg v1
+and v2 were frozen in git before their data. The v3 pre-reg and all Part II
+work were authored on LUMI scratch/gbar *outside version control* — v3's
+freeze (2026-06-12, before the extension launched) is evidenced by file
+mtimes and the LSF submission record, not by a commit hash. Everything was
+imported into git on 2026-07-10.
 
 ---
 
@@ -18,8 +27,11 @@ Three findings, in increasing order of how publishable they are:
 1. **Registered confirmatory test (β_RA, the reward × A interaction):**
    posterior median = 1.39 log-odds, 95% CrI [-0.13, +2.94], P(>0) = 0.963.
    By the pre-reg's literal decision rule, the 95% CrI doesn't exclude zero —
-   so the formal verdict is **REFINE**, not PURSUE. P(>0) = 96.3% is just
-   under the conventional one-sided 95% threshold.
+   so the formal verdict is **REFINE**, not PURSUE. [Correction 2026-07: the
+   original text said 96.3% was "just under the conventional one-sided 95%
+   threshold" — it is *above* 95%; the relevant bar is the 97.5% one-sided
+   level implied by the two-sided CrI rule, which it is under. Superseded by
+   the §16 PURSUE at n=20/cell.]
 
 2. **Reward-induced heteroscedasticity (σ_seeker[R7] ≫ σ_seeker[R4]):**
    σ_seeker[R7] = 1.75 vs σ_seeker[R4] = 0.43 (log-odds), 95% CrIs non-overlapping.
@@ -44,7 +56,7 @@ registered claim that motivated the study; we report it honestly.
 | reward shaping | R4_sparse, R7_kitchen_sink |
 | zoo intensity A | 0.0 (pure self-play), 0.5 (50% zoo) |
 | algorithm | **PPO only** (SAC dropped after pilot, see §"SAC pilots") |
-| seeds | 0, 1, 2, 3, 4 + anchor seed 42 (R4) + R7-only seeds 5, 6, 7, 8 |
+| seeds | 0, 1, 2, 3, 4 + anchor seed 42 (both rewards × both A) + R7-only seeds 5, 6, 7, 8 [Correction 2026-07: original said "anchor seed 42 (R4)"; the 4 anchors span R4/R7 × A=0/0.5 per pre-reg v2 §A4 — the row's own 10+18+4=32 arithmetic only works that way] |
 
 **Held constant:** HSM = 1.15, layout `four_corners`, 5M timesteps, zoo size 50,
 uniform sampling. Pre-reg v1, v2 record full settings; v2 documents the
@@ -53,9 +65,14 @@ PPO-only descope.
 **Total training:** 32 PPO runs (10 R4 + 18 R7 + 4 anchors), ~32 CPU-hr.
 
 **Gauntlet:** every-vs-every 32 × 32 = 1,024 matchups (less 32 self-pair) =
-992 matchups × ~100 episodes via 3-stage successive halving (10 → 30 → 100
-episodes, escalating on Wilson CI ambiguity). **99,200 episode outcomes
-total** form the analysis dataset.
+992 matchups × 100 episodes each. **99,200 episode outcomes total** form the
+analysis dataset. [Correction 2026-07: the original described "3-stage
+successive halving (10 → 30 → 100, escalating on Wilson CI ambiguity)". The
+escalation thresholds were mathematically unreachable (min Wilson half-width
+0.139 at n=10 > 0.10; 0.057 at n=30 > 0.05), so every matchup ran all 100
+episodes and no adaptive decision ever fired — which the exact 992×100 total
+betrays. Uniform n is what the downstream per-episode models assume, so the
+data are fine; the *methods description* was wrong. See §18.1.]
 
 ---
 
@@ -68,10 +85,16 @@ Per-cell mean seeker WR vs the 32-policy reference pool (self-pair excluded):
 | R4_sparse | 0.259 | 0.253 | -0.006 |
 | R7_kitchen_sink | 0.620 | 0.758 | +0.138 |
 
-Raw-scale interaction Δ-of-Δ = **+0.144 pp WR**.
+Raw-scale interaction Δ-of-Δ = **+14.4pp WR** [Correction 2026-07: original
+said "+0.144 pp"; 0.144 in WR units is 14.4 percentage points].
 
-**Logistic mixed-effects model** (per pre-reg v2 §A5, with the critic-recommended
-heteroscedastic σ_seeker[reward] amendment per §A6 REFINE branch):
+**Logistic mixed-effects model** [Correction 2026-07: the heteroscedastic
+σ_seeker[reward] term was *not* authorized by pre-reg v2 — §A5 says
+"unchanged from v1 §4.3" (pooled σ, per-seed intercepts) and §A6's REFINE
+branch adds seeds, not model terms. It is a post-hoc, data-motivated model
+change made without the v3 amendment the v2 Lock required, and σ_s[R7]/σ_s[R4]
+— finding 2 — is precisely the unregistered parameter. Reported as exploratory;
+see §18.2]:
 
 ```
 y_e ~ Bernoulli(σ⁻¹(η_e))
@@ -117,7 +140,9 @@ In WR terms (at the cell mean), one standard deviation around the
 seeker-level intercept is:
 
 - R4 seekers: ±9pp around the cell mean WR
-- R7 seekers: ±35pp around the cell mean WR
+- R7 seekers: ±35pp around the cell mean WR [Correction 2026-07: linearized;
+  at a 0.69 cell mean a ±1.75 log-odds band is asymmetric, roughly −41/+24pp.
+  The log-odds σ values are the quotable numbers]
 
 Concretely, examining the 18 R7 final seekers individually:
 - Top: R7/A=0.5/seed_0 reaches **0.99** gauntlet WR
@@ -189,6 +214,15 @@ this paper's scope.
 
 ## §6 — Mechanism (pending)
 
+> **[2026-07 status: this section's trajectory-PCA plan was never validly
+> executed.** The 2026-05-14 run used features that indexed agent slot 0 as
+> the seeker, but the env randomizes roles per reset — ~50% of episodes
+> measured the hider (§18.3). No conclusion was ever drawn from it, and the
+> mechanism question was answered by Part II's ablations instead (§10–§12).
+> The fixed analysis (role-correct gather, arena-scaled thresholds, outcome
+> features excluded from the PCA, 4-anchor reference panel) is queued as a
+> supplementary check.]
+
 The heteroscedasticity finding raises the question: *why* does R7
 produce a wide policy-quality distribution? Two non-mutually-exclusive
 hypotheses:
@@ -238,14 +272,27 @@ Surfaced during the analysis arc; worth a methods section:
 3. **Variational Bayes underestimates posterior variance with hierarchical
    structure.** Our pre-reg listed VB as a fallback and required MCMC
    when available. The VB CrI for β_RA was ~10× too narrow vs proper
-   NUTS. Beware.
+   NUTS. Beware. [Correction 2026-07: partly confounded — the VB run
+   (`design_c_analyze.py`) also grouped random intercepts by *seed number*
+   via `C(seeker_seed_str)`, pooling unrelated policies from different
+   cells into one intercept, while the NUTS fit grouped per policy. The
+   ~10× factor mixes "VB underestimates" with "differently-specified
+   model". The Part II panel VB-vs-NUTS contrast (§9), where the specs
+   match, is the clean evidence for this lesson.]
 
 4. **Pre-registration earned its keep.** Without v1/v2 frozen in git
    history, the directional flip (substitution → complementarity) and
    the "elevate heteroscedasticity from a nuisance to a finding" move
    would both look like post-hoc rationalization. With frozen pre-regs,
    the paper can transparently say "registered confirmatory result =
-   REFINE; here's the exploratory follow-up."
+   REFINE; here's the exploratory follow-up." [Correction 2026-07: its
+   *disclosure* function worked; its *binding* function was repeatedly
+   violated in Part I — the registered decision rule was never evaluated
+   on the registered 16-policy pool (REFINE-1 was launched ~3.5h after
+   the grid, before any gauntlet existed), both refine rounds deviated
+   from §A6's prescription, REFINE-2 was R7-only and data-triggered, and
+   the model spec changed post-data with no v3. The v3 power extension
+   (§16) was the first arm run fully by its own rules. Full list: §18.2.]
 
 ---
 
@@ -409,10 +456,14 @@ and even A=0.5 doesn't fully guarantee it.
 
 Two findings on *how* A works:
 
-- **It is the seeker's training exposure, not the final hider.** Hider
-  behavioral dispersion (final-hider panel, `design_c_hider_panel_eval.py`)
-  is similar across A — A=0.5 does not produce systematically different
-  final hiders; it exposes the seeker to the zoo's history.
+- **It is the seeker's training exposure, not the final hider.**
+  **[RETRACTED pending re-measurement, 2026-07:** this rested on hider
+  behavioral dispersion from `design_c_hider_panel_eval.py`, which indexed
+  agent slot 1 as the hider while the env randomizes roles per reset —
+  ~50% of episodes measured the seeker. Mixing both agents into every
+  fingerprint mechanically pushes dispersion toward "similar across A",
+  i.e. the bug biases *toward* this claim. Re-run with role-correct
+  features queued; until then the claim has no valid evidence. §18.3]
 - **No evidence that A's benefit is coverage-specific.** Model B
   (no_coverage vs kitchen_sink × A), NUTS: the A main effect for
   R7_no_coverage is +1.25 [-0.59, +3.13] (directional, P ≈ 0.9) and the
@@ -509,7 +560,7 @@ in the paper, not a section.
 
 | claim | status |
 |---|---|
-| β_RA > 0: shaping and zoo training are complements, not substitutes | **PURSUE (final, prereg v3 at n=20/cell, §16):** +2.05 [+0.72, +3.45], P(>0) = 0.9989. Trajectory of the estimate: +1.39 (gauntlet, n=5–9) → +1.70 (panel, n=5–9) → +2.05 (panel, n=20). NOTE the certified sign is *opposite* the originally registered substitution hypothesis. |
+| β_RA > 0: shaping and zoo training are complements, not substitutes | **PURSUE (final, prereg v3 at n=20/cell, §16):** +2.05 [+0.72, +3.45], P(>0) = 0.9989. Trajectory of the estimate: +1.39 (gauntlet, n=5–9) → +1.70 (panel, n=5–9) → +2.05 (panel, n=20). NOTE the certified sign is *opposite* the originally registered substitution hypothesis. **2026-07 caveats (§18):** (a) survives the pair-RE overdispersion robustness fit (§18.4); (b) "reward" here changes BOTH roles' rewards — seeker-shaping vs opponent-quality attribution is being tested by the mixed-reward cells (§18.5); (c) β is a conditional log-odds coefficient, non-collapsibility-inflated relative to the marginal scale the §7 thresholds were calibrated on — marginal DiD reported alongside (§18.4). |
 | β_A ≈ 0 under sparse reward | Replicated at n=20: -0.16 [-0.58, +0.25]. A does nothing for R4_sparse. |
 
 The power extension that produced this (prereg v3, frozen 2026-06-12
@@ -524,7 +575,7 @@ see §16 for the fit, hardware batch check, and robustness rerun.
 | R4 fails by basin; A does not rescue it | §10, β_A ≈ 0 (NUTS-certified ≈ 0) |
 | R7 fails mostly by over-specialization | §10 (10 over-spec vs 3 basin across R7 cells at HSM 1.15) |
 | A is a dose: small A kills basins, large A kills over-spec | §11 (failure-mode counts; descriptive) |
-| A works through zoo-history exposure, not final-hider diversity | §11, hider panel |
+| A works through zoo-history exposure, not final-hider diversity | **RETRACTED pending re-measurement** — hider-panel features were role-scrambled (§18.3); the bug biased toward this claim |
 | coverage bonus is an over-spec trap; no-coverage cells 15/15 healthy | §12 (failure-mode counts; descriptive but stark) |
 | urgency corrals coverage / negative cov×urg interaction | §12 — **descriptive only**: NUTS CrI includes 0 (P(<0) = 0.83); direction consistent across all estimators |
 | removing both shaped terms removes most between-seed variance (σ_run 0.95 vs 1.7–2.1) | §12, NUTS σ_run posteriors |
@@ -603,3 +654,158 @@ Going forward: training on gbar, evals/analysis local. The MCMC
 confirmation (§9, §11, §12) runs locally in ~20 s/model
 (`design_c_panel_mcmc.py`, Binomial likelihood on per-(run, anchor)
 counts) — it never needed a cluster.
+
+---
+---
+
+# Part III — 2026-07 adversarial review: errata and follow-ups
+
+A full adversarial review (three independent audit passes over the code,
+the data provenance, and the pre-registration chain, 2026-07-09/10)
+found the items below. Inline `[Correction 2026-07]` notes mark the
+specific error sites in Part I/II; this section is the consolidated
+record. Code fixes land in the same commit series that adds this section.
+
+## §18.1 — The successive halving never happened
+
+The gauntlet's Wilson-CI escalation thresholds were mathematically
+unreachable (minimum achievable 95% half-width: 0.139 at n=10 vs
+threshold 0.10; 0.057 at n=30 vs 0.05), and the coded criterion also
+differed from pre-reg v1 §6's. Every matchup in both gauntlets ran
+exactly 100 episodes — hence the exact 992×100 = 99,200 total. No bias
+results (uniform n is what the unweighted per-episode GLMM/MCMC assume;
+a *working* halving would have over-sampled ambiguous matchups and
+biased them), but the methods text was wrong and the "concentrates
+compute" claim false in practice. The dead machinery is removed
+(`design_c_gauntlet.py` now runs a fixed 100 episodes/matchup).
+
+## §18.2 — Pre-registration deviations, complete list (Part I)
+
+1. The registered decision rule was never evaluated at its registered
+   decision point: REFINE-1 (seeds 3–4) was committed ~3.5h after the
+   grid launch, before any gauntlet existed; the first gauntlet ever run
+   was the 24-policy one.
+2. REFINE-1 ran 2 seeds/8 runs vs §A6's "3 more seeds (+6 runs)" (whose
+   own arithmetic — 3 seeds × 4 cells = 12 runs — was already broken).
+3. REFINE-2 was R7-only, explicitly data-triggered (targeting the arm
+   with the interesting σ), and changed the reference-pool composition
+   to 62.5% R7-trained without the v3 amendment the v2 Lock required.
+4. The heteroscedastic σ_seeker[reward] model term was added post-data
+   (also without v3); §1's citation of "§A6 REFINE branch" misattributed
+   it. σ_s[R7]/σ_s[R4] is an unregistered, exploratory parameter.
+5. Anchors were trained ~1h *after* the grid launch (v1 §4.2 required
+   before, frozen); 4 anchors in a 32-policy pool cannot break the pool's
+   self-reference anyway. (Part II's fixed 4-anchor panel is the repair.)
+6. Only one of the "three pre-registered pilots" was registered in v1;
+   the other two were added the same day, post-v1.
+7. The registered REML arm became a GLM with one-way (seeker-only)
+   cluster-robust SEs; the VB arm's random effects were grouped by seed
+   number, pooling unrelated policies (see §7.3 correction).
+8. v3 and all Part II work were authored outside git (see Provenance
+   note); imported 2026-07-10.
+
+Two mitigating replications: the v3 extension (§16) was fixed-n,
+frozen-before-launch, with no interim fits; and the heteroscedasticity
+pattern reproduced on new seeds (REFINE-2) and on the independent anchor
+panel — it is real, but its *quantification* comes from an unregistered
+model on a data-dependently expanded pool.
+
+## §18.3 — Role-scrambled behavioral features (code bug)
+
+`VecTagEnv` randomizes agent-slot/role assignment every reset;
+`design_c_trajectory_analysis.py` and `design_c_hider_panel_eval.py`
+indexed slots 0/1 as seeker/hider directly, so ~50% of episodes measured
+the wrong agent. WR-type outputs were unaffected (`info['tagged']` is
+role-independent — the anchor-panel GLMM/MCMC and all §9–§16 win-rate
+results stand). Invalidated: the 2026-05-14 `behavior/` outputs (§6,
+never used for claims) and §11's hider-dispersion claim (retracted
+above; the scrambling biased toward it). Also fixed in the same commit:
+center/wall thresholds calibrated to a 7.5 half-extent arena
+(`arena_half` = 15), and `mean_tag_time` (outcome leakage) removed from
+the behavior PCA. Both analyses re-run with fixes; results to be
+appended.
+
+## §18.4 — Statistical-model robustness (confirmatory PURSUE)
+
+The §16 Model A treats each Binomial(n=30) (run, anchor) row as exact
+given run+anchor intercepts, yet §9's own data show large run×anchor
+interaction (one seeker spanning 0.00–1.00 across anchors) — unmodeled
+overdispersion makes CrIs anti-conservative. `design_c_panel_mcmc.py`
+now supports `--pair-re` (per-row random effect) and `--seed-re` (cells
+are seed-paired: same seed = bit-identical init across cells), and
+reports the marginal (population-averaged) interaction in WR units
+alongside the conditional β_RA (which non-collapsibility inflates
+relative to the marginal scale the §7 thresholds were written in).
+
+**Robustness refit (2026-07-10, local, target_accept 0.95 and 0.99):
+PURSUE survives.** Model A + pair RE + seed RE: β_RA = +2.40
+[+0.77, +4.05], P(>0) = 0.998 (baseline reproduced first: +2.05
+[+0.72, +3.45], P = 0.9989, matching §16 exactly). The CrI widens as
+predicted but the lower bound stays above both 0 and log(1.25).
+Marginal interaction: **+21pp WR, 95% CrI [+5.2, +36.9], P(>0) = 0.995**
+— certified on the WR scale the thresholds were written in. Posterior
+REs: σ_pair = 2.07 [1.86, 2.31] — the run×anchor interaction §9
+observed anecdotally is as large as σ_run[R7] (2.18), vindicating the
+robustness check; σ_seed ≈ 0.18 (seed pairing negligible);
+σ_run[R4] collapses toward 0 once pair RE absorbs row noise (its
+posterior funnels — R̂ ≈ 1.08 on that nuisance parameter only, 8
+divergences at 0.99; β_RA itself mixes cleanly, R̂ = 1.000,
+ESS ≈ 3500, and is stable across both target_accept settings).
+Note σ_run[R7] ≫ σ_run[R4] persists under pair RE — the
+heteroscedasticity replication is not an overdispersion artifact.
+Outputs: `anchor_panel/panel_mcmc_A_pairre_seedre.txt`.
+
+## §18.5 — The opponent-reward confound and the mixed-reward cells
+
+The deepest unresolved issue: "reward shaping" as manipulated changes
+the HIDER's reward too (R7 carries six hider-side terms; R4's hider is
+terminal-only), and seeker and hider co-train in the same run. Every
+R4-vs-R7 seeker contrast is therefore also an opponent-quality and
+zoo-curriculum-quality contrast; both headline effects (β_RA > 0 and
+the R7 σ inflation) admit an opponent-side explanation with no
+seeker-shaping interaction at all. β_A ≈ 0 at R4 is equally consistent
+with "a stale sparse-reward zoo hider is a useless curriculum".
+
+Deconfounding experiment (launched with this arc, `--legacy-gae` for
+comparability): **R7sk_R4hd** cells — seeker keeps R7's seeker-side
+terms (pursuit distance, escalating urgency; coverage excluded per §12's
+over-spec finding), hider gets exactly R4's terminal-only reward — at
+A ∈ {0, 0.5} × 10 seeds. Comparison against the existing R4 cells
+isolates seeker-side shaping at fixed opponent reward; comparison
+against R7_kitchen_sink separates seeker-shaping from hider-shaping
+contributions to the interaction and to σ.
+
+## §18.6 — GAE done-mask off-by-one (training-code bug, all runs)
+
+`train_zoo.py` cut GAE bootstrap/recursion by `dones[t+1]` instead of
+`dones[t]`: terminal transitions bootstrapped γ·V(next episode's reset
+state), the pre-terminal step was cut one step early, and the buffer
+tail bootstrapped post-reset values. Shared by every run in this study
+(both arms, both parts), so internal comparisons remain internally
+consistent — but the bias scales with |V(reset)|, which is largest in
+dense-reward runs, making it a candidate artifactual contributor to the
+R7-arm variance findings. Fixed (correct masking is now the default;
+`--legacy-gae` reproduces the old behavior and is recorded in run
+metadata). Bounding experiment launched with this arc: R4/A=0 and
+R7/A=0, 5 seeds each, fixed-GAE, evaluated on the same anchor panel —
+if the R7 failure-mode mix shifts materially, the taxonomy needs a
+GAE-sensitivity footnote and the σ claims a partial re-run.
+
+## §18.7 — Smaller factual corrections
+
+- "Zoo size 50" never binds: 5M steps ÷ 8,192 steps/update ≈ 610
+  updates at interval 50 → ≤12 snapshots ever. A is uniform over ≤12
+  checkpoints, several from very early training.
+- "5M timesteps per run" counts both roles' rollouts; each policy
+  trains on ~2.5M of its own steps.
+- §10's taxonomy table has a "mixed" column that the three-way
+  definition above it doesn't define (runs whose anchor-mean sits in
+  0.4–0.6 with own-WR in between; borderline cases).
+- Part I §3's SVD is grand-mean-centered only, so component 1 mixes
+  seeker/hider main effects with "transitive skill", and a purely
+  transitive game would still show σ²₂ > 0; the 61/16/11% shares are
+  not a clean skill/cycle decomposition (double-centering check queued).
+  The qualitative "non-transitive structure exists" reading survives (a
+  calibrated transitive null predicts ~93% in component 1; observed 61%).
+- §8's "Analysis (GLM + VB + MCMC ×2)" line and the "17–47 min"
+  gauntlet times are unverifiable post-LUMI; treated as approximate.

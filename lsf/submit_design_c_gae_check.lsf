@@ -1,0 +1,38 @@
+#!/bin/bash
+#BSUB -J dc_gaechk[1-10]%2
+#BSUB -q hpc
+#BSUB -n 8
+#BSUB -R "span[hosts=1]"
+#BSUB -R "rusage[mem=1GB]"
+#BSUB -W 4:00
+#BSUB -o logs/dc_gaechk_%J_%I.out
+#BSUB -e logs/dc_gaechk_%J_%I.err
+#BSUB -u /dev/null
+
+# Design C GAE-fix bounding runs (results.md section 18.6):
+# R4_sparse/A=0 and R7_kitchen_sink/A=0, seeds 0-4, CORRECTED GAE.
+# Output labels get a _gaefix suffix so panel rows never mix with
+# legacy cells. Submit with -w 'done(<dc_mixed jobid>)' to stay within
+# the 2-node clearance.
+
+set -euo pipefail
+HOMEREPO="$HOME/AI-Plays-Tag"
+JOBTMP="/tmp/${USER}_dcgc_${LSB_JOBID}_${LSB_JOBINDEX}"
+mkdir -p "$JOBTMP/repo"
+trap 'mkdir -p "$HOMEREPO/experiments/results"; rsync -a "$JOBTMP/repo/experiments/results/" "$HOMEREPO/experiments/results/" 2>/dev/null || true; rm -rf "$JOBTMP"' EXIT
+
+echo "=== GAE-fix bounding run (LSF $LSB_JOBID[$LSB_JOBINDEX]) ==="
+echo "Host: $(hostname)   JOBTMP: $JOBTMP"
+echo "Date: $(date)"
+
+tar -C "$JOBTMP" -xzf "$HOMEREPO/pixi_env.tar.gz"
+rsync -a --exclude='.pixi' --exclude='results' --exclude='logs' \
+      --exclude='*.tar.gz' "$HOMEREPO/" "$JOBTMP/repo/"
+
+PY="$JOBTMP/.pixi/envs/default/bin/python"
+cd "$JOBTMP/repo"
+TASK_ID=$((LSB_JOBINDEX - 1))
+export OMP_NUM_THREADS=8
+"$PY" experiments/design_c_gae_check_tasks.py --task-id "$TASK_ID"
+
+echo "Done: $(date)"
