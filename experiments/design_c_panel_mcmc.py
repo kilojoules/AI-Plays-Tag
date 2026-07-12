@@ -91,6 +91,26 @@ def select_model(anch: pd.DataFrame, which: str):
         d["cov_x_urg"] = d.cov_rm * d.urg_rm
         return d, ["cov_rm", "urg_rm", "cov_x_urg"], "cov_x_urg", \
             "Model C (exploratory factorial at A=0)"
+    # Deconfound triangle (results.md section 18.5): the prereg "reward"
+    # factor changed BOTH roles' rewards. R7sk_R4hd cells hold the hider
+    # at R4's terminal-only reward with R7's seeker-side shaping (coverage
+    # excluded), splitting the confounded contrast into two clean legs.
+    if which == "D":
+        d = anch[anch.reward.isin(["R4_sparse", "R7sk_R4hd"])
+                 & anch.A.isin([0.0, 0.5])].copy()
+        d["X"] = (d.reward == "R7sk_R4hd").astype(int)
+        d["A01"] = (d.A == 0.5).astype(int)
+        d["XA"] = d.X * d.A01
+        return d, ["X", "A01", "XA"], "XA", \
+            "Model D (deconfound leg 1): seeker-side shaping x A at fixed sparse hider"
+    if which == "E":
+        d = anch[anch.reward.isin(["R7sk_R4hd", "R7_no_coverage"])
+                 & anch.A.isin([0.0, 0.5])].copy()
+        d["X"] = (d.reward == "R7_no_coverage").astype(int)
+        d["A01"] = (d.A == 0.5).astype(int)
+        d["XA"] = d.X * d.A01
+        return d, ["X", "A01", "XA"], "XA", \
+            "Model E (deconfound leg 2): hider-side shaping x A at fixed seeker shaping"
     raise ValueError(which)
 
 
@@ -247,7 +267,7 @@ def report(idata, d, fe_cols, key, label, suffix, draws, chains):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", choices=["A", "B", "C", "all"], default="all")
+    ap.add_argument("--model", choices=["A", "B", "C", "D", "E", "all"], default="all")
     ap.add_argument("--panel", type=Path, default=PANEL)
     ap.add_argument("--draws", type=int, default=2000)
     ap.add_argument("--chains", type=int, default=4)

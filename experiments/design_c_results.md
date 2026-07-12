@@ -225,9 +225,17 @@ this paper's scope.
 > the seeker, but the env randomizes roles per reset — ~50% of episodes
 > measured the hider (§18.3). No conclusion was ever drawn from it, and the
 > mechanism question was answered by Part II's ablations instead (§10–§12).
-> The fixed analysis (role-correct gather, arena-scaled thresholds, outcome
-> features excluded from the PCA, 4-anchor reference panel) is queued as a
-> supplementary check.]
+>
+> **Verdict from the fixed analysis (2026-07-11,** role-correct gather,
+> arena-scaled thresholds, outcome features excluded from the PCA,
+> 4-anchor reference panel): |corr(behavior PC1, SVD U1)| = **0.81**,
+> above the pre-declared 0.7 bar → the **exploration-variance story**:
+> high-WR R7 seekers occupy the same region of behavior space — the seed
+> lottery is about *finding* the good pursuit strategy, not about
+> multiple distinct good strategies. PC2↔U2 ≈ 0. Consistent with §10's
+> taxonomy (failures are non-learners and over-specializers, not
+> alternative styles) and with §18.5 (variance is seeker-side).
+> `behavior/behavior_summary.txt`.]
 
 The heteroscedasticity finding raises the question: *why* does R7
 produce a wide policy-quality distribution? Two non-mutually-exclusive
@@ -463,13 +471,13 @@ and even A=0.5 doesn't fully guarantee it.
 Two findings on *how* A works:
 
 - **It is the seeker's training exposure, not the final hider.**
-  **[RETRACTED pending re-measurement, 2026-07:** this rested on hider
-  behavioral dispersion from `design_c_hider_panel_eval.py`, which indexed
-  agent slot 1 as the hider while the env randomizes roles per reset —
-  ~50% of episodes measured the seeker. Mixing both agents into every
-  fingerprint mechanically pushes dispersion toward "similar across A",
-  i.e. the bug biases *toward* this claim. Re-run with role-correct
-  features queued; until then the claim has no valid evidence. §18.3]
+  **[Retracted 2026-07-10, reinstated 2026-07-11 on valid evidence:**
+  the original measurement was role-scrambled (§18.3) and biased toward
+  this claim, so it was retracted. The role-correct re-measurement
+  reaches the same conclusion legitimately: standardized hider-feature
+  dispersion in R7_kitchen_sink is 1.01 (A=0) vs 0.98 (A=0.5) —
+  A=0.5 does not produce systematically more diverse final hiders.
+  `anchor_panel/hider_panel.csv`.]
 - **No evidence that A's benefit is coverage-specific.** Model B
   (no_coverage vs kitchen_sink × A), NUTS: the A main effect for
   R7_no_coverage is +1.25 [-0.59, +3.13] (directional, P ≈ 0.9) and the
@@ -566,7 +574,7 @@ in the paper, not a section.
 
 | claim | status |
 |---|---|
-| β_RA > 0: shaping and zoo training are complements, not substitutes | **PURSUE (final, prereg v3 at n=20/cell, §16):** +2.05 [+0.72, +3.45], P(>0) = 0.9989. Trajectory of the estimate: +1.39 (gauntlet, n=5–9) → +1.70 (panel, n=5–9) → +2.05 (panel, n=20). NOTE the certified sign is *opposite* the originally registered substitution hypothesis. **2026-07 caveats (§18):** (a) survives the pair-RE overdispersion robustness fit (§18.4); (b) "reward" here changes BOTH roles' rewards — seeker-shaping vs opponent-quality attribution is being tested by the mixed-reward cells (§18.5); (c) β is a conditional log-odds coefficient, non-collapsibility-inflated relative to the marginal scale the §7 thresholds were calibrated on — marginal DiD reported alongside (§18.4). |
+| β_RA > 0: shaping and zoo training are complements, not substitutes | **PURSUE (final, prereg v3 at n=20/cell, §16):** +2.05 [+0.72, +3.45], P(>0) = 0.9989. Trajectory of the estimate: +1.39 (gauntlet, n=5–9) → +1.70 (panel, n=5–9) → +2.05 (panel, n=20). NOTE the certified sign is *opposite* the originally registered substitution hypothesis. **2026-07 robustness (§18):** (a) survives the pair-RE overdispersion refit: +2.40 [+0.77, +4.05]; marginal scale +21pp WR [+5.2, +36.9] (§18.4); (b) attribution resolved by the mixed-reward cells — the effect is **seeker-side** (Model D reproduces main effect certified and interaction at P=0.96 with a sparse hider; Model E shows no hider-side interaction, §18.5); (c) reproduces under corrected GAE (§18.6). |
 | β_A ≈ 0 under sparse reward | Replicated at n=20: -0.16 [-0.58, +0.25]. A does nothing for R4_sparse. |
 
 The power extension that produced this (prereg v3, frozen 2026-06-12
@@ -581,8 +589,8 @@ see §16 for the fit, hardware batch check, and robustness rerun.
 | R4 fails by basin; A does not rescue it | §10, β_A ≈ 0 (NUTS-certified ≈ 0) |
 | R7 fails mostly by over-specialization | §10 (10 over-spec vs 3 basin across R7 cells at HSM 1.15) |
 | A is a dose: small A kills basins, large A kills over-spec | §11 (failure-mode counts; descriptive) |
-| A works through zoo-history exposure, not final-hider diversity | **RETRACTED pending re-measurement** — hider-panel features were role-scrambled (§18.3); the bug biased toward this claim |
-| coverage bonus is an over-spec trap; no-coverage cells 15/15 healthy | §12 (failure-mode counts; descriptive but stark) |
+| A works through zoo-history exposure, not final-hider diversity | Retracted 2026-07-10 (role-scrambled features, §18.3); **reinstated 2026-07-11** — role-correct re-measurement: hider dispersion 1.01 vs 0.98 across A (§11) |
+| coverage bonus is an over-spec trap; no-coverage cells 15/15 healthy | §12 (failure-mode counts; descriptive but stark). **Conditionality found 2026-07-11:** with a *sparse* (unshaped) hider, over-spec re-emerges even without coverage (3/10 in R7sk_R4hd/A=0) — partner narrowness enables it, coverage amplifies it (§18.5) |
 | urgency corrals coverage / negative cov×urg interaction | §12 — **descriptive only**: NUTS CrI includes 0 (P(<0) = 0.83); direction consistent across all estimators |
 | removing both shaped terms removes most between-seed variance (σ_run 0.95 vs 1.7–2.1) | §12, NUTS σ_run posteriors |
 | failure modes persist across HSM 1.05–1.20, severity scales with hider speed | §14 |
@@ -778,8 +786,42 @@ terms (pursuit distance, escalating urgency; coverage excluded per §12's
 over-spec finding), hider gets exactly R4's terminal-only reward — at
 A ∈ {0, 0.5} × 10 seeds. Comparison against the existing R4 cells
 isolates seeker-side shaping at fixed opponent reward; comparison
-against R7_kitchen_sink separates seeker-shaping from hider-shaping
-contributions to the interaction and to σ.
+against R7_no_coverage isolates hider-side shaping at fixed seeker
+shaping.
+
+**Results (2026-07-11, `panel_mcmc_D/E`): the headline effects are
+seeker-side. The opponent-quality escape route is closed.**
+
+Cell means (anchor-mean WR): R7sk_R4hd = 0.672 (A=0, sd 0.231) and
+0.820 (A=0.5, sd 0.189) — vs R4_sparse 0.308/0.273 and R7_kitchen_sink
+0.597/0.814.
+
+- **Model D** (R4_sparse vs R7sk_R4hd × A; both arms face the same
+  sparse co-evolving hider): seeker-shaping main effect β_X = **+1.94
+  [+0.81, +3.21]** — certified; seeker-side shaping alone reproduces
+  the full R4→R7 main effect (Model A's β_R = +1.57). Interaction
+  β_XA = +1.48 [-0.21, +3.20], P(>0) = 0.96 (robust variant +1.67
+  [-0.26, +3.61], P = 0.95) — same direction and comparable magnitude
+  to Model A's +2.05, at only n=10 in the mixed cells (REFINE-grade
+  alone; strong attribution evidence jointly with §16).
+  **Heteroscedasticity also reproduces at fixed hider reward:**
+  σ_run[R7sk_R4hd] = 1.95 [1.28, 2.75] vs σ_run[R4] = 0.66
+  [0.49, 0.83] — the seed lottery is caused by the seeker's shaping,
+  not by opponent diversity.
+- **Model E** (R7sk_R4hd vs R7_no_coverage × A; seeker shaping fixed,
+  hider shaping toggled): interaction β_XA = -0.02 [-2.35, +2.32]
+  (robust -0.39 [-2.94, +2.23]) — no hider-side interaction; marginal
+  DiD ≈ -5pp [-21, +10]. Hider-shaping main effect +1.09 [-0.59,
+  +2.63] — a possible curriculum benefit, not resolvable at these n.
+  σ_run identical across the two cells (1.93 vs 1.94).
+
+One new wrinkle: R7sk_R4hd/A=0 produces over-specializers (3/10 runs
+with own-WR = 1.0, anchor-mean < 0.45) *without* the coverage bonus —
+against a sparse (weaker, narrower) co-evolving hider, over-fitting to
+the partner re-emerges. §12's "coverage is the over-spec trap" is
+therefore conditional on the hider being shaped: over-specialization is
+enabled by partner narrowness and merely amplified by coverage. Zoo
+dose still clears it (0/10 basins, fewer over-spec at A=0.5).
 
 ## §18.6 — GAE done-mask off-by-one (training-code bug, all runs)
 
@@ -793,9 +835,17 @@ dense-reward runs, making it a candidate artifactual contributor to the
 R7-arm variance findings. Fixed (correct masking is now the default;
 `--legacy-gae` reproduces the old behavior and is recorded in run
 metadata). Bounding experiment launched with this arc: R4/A=0 and
-R7/A=0, 5 seeds each, fixed-GAE, evaluated on the same anchor panel —
-if the R7 failure-mode mix shifts materially, the taxonomy needs a
-GAE-sensitivity footnote and the σ claims a partial re-run.
+R7/A=0, 5 seeds each, fixed-GAE, evaluated on the same anchor panel.
+
+**Result (2026-07-11): the bug is not a material driver.** Same seeds,
+corrected GAE: R4 cell mean 0.277 (legacy 0.275), per-seed diffs
+≤ ±0.13. R7 cell mean 0.670 (legacy 0.607) with per-seed diffs
+both-signed and large (+0.78 to −0.44) — same-seed pairs diverge
+immediately once the advantage estimates change, so these are fresh
+draws from the same wide distribution, not a systematic shift; the R7
+spread is unchanged (sd 0.27 vs 0.26). Both the R4→R7 gap and the R7
+seed variance reproduce under corrected GAE (n=5/cell, descriptive).
+Future training should use the corrected default.
 
 ## §18.7 — Smaller factual corrections
 

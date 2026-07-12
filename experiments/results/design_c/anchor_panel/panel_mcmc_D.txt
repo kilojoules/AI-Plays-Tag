@@ -1,0 +1,24 @@
+=== Model D (deconfound leg 1): seeker-side shaping x A at fixed sparse hider — PyMC NUTS ===
+rows=240  runs=60  anchors=4  draws=2000 x 4 chains
+
+                        mean      sd  hdi_2.5%  hdi_97.5%  mcse_mean  mcse_sd   ess_bulk   ess_tail   r_hat
+beta_0               -0.8787  0.2271   -1.3111    -0.4479     0.0086   0.0138   908.3477   966.3991  1.0039
+beta_X                1.9422  0.6082    0.8094     3.2057     0.0228   0.0111   711.0090  1302.4848  1.0082
+beta_A01             -0.1523  0.2122   -0.5621     0.2729     0.0064   0.0035  1112.6118  2269.7852  1.0014
+beta_XA               1.4751  0.8555   -0.1963     3.2107     0.0293   0.0172   859.6074  1490.1110  1.0060
+sigma_run[R4_sparse]  0.6561  0.0883    0.4928     0.8310     0.0011   0.0010  6947.4634  6031.7112  1.0003
+sigma_run[R7sk_R4hd]  1.9481  0.3870    1.2799     2.7487     0.0059   0.0050  4482.5304  5279.6293  1.0006
+sigma_anchor          0.2591  0.2441    0.0334     0.6648     0.0077   0.0182  2025.0790  1195.5904  1.0012
+
+--- beta_XA (key coefficient) ---
+posterior median = +1.4549
+95% CrI = [-0.2055, +3.2029]
+P(beta > 0) = 0.9587
+
+VERDICT (section 7): REFINE (|beta|=1.455, CrI [-0.205, 3.203])
+
+--- marginal interaction (WR units, logistic-normal approx) ---
+Delta-of-Delta = +0.1833  95% CrI [-0.0215, +0.3934]
+P(DiD > 0) = 0.9611
+(conditional beta_XA is non-collapsibility-inflated; this is
+ the population-averaged effect on the WR scale)

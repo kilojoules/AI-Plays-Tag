@@ -1,0 +1,45 @@
+=== Design C behavior analysis ===
+Pool: 32 policies; reference hiders: ids 28,29,30,31
+Episodes per seeker per reference: 30
+
+PC1 share of behavior variance: 0.599
+PC2 share of behavior variance: 0.294
+Correlation behavior PC1 vs outcome SVD U1: -0.807
+Correlation behavior PC2 vs outcome SVD U2: -0.012
+  (signs of PC2/U2 are arbitrary and component order is noise-fragile; only |corr| of PC1-U1 feeds the verdict)
+  → behavior PC1 strongly aligned with skill axis (high-WR seekers behave similarly)
+
+Per-policy mean features, sorted by behavior PC1:
+ id source          reward   A  seed    wr  mean_path_len  mean_dist  frac_center  frac_wall  beh_PC1  beh_PC2  U1_seeker  U2_seeker
+  0   grid       R4_sparse 0.0     0 0.342         35.394     16.741        0.071      0.730    3.117    1.482     -0.207     -0.001
+ 28 anchor       R4_sparse 0.0    42 0.325         38.057     19.001        0.059      0.704    2.954    0.648     -0.162     -0.179
+  3   grid       R4_sparse 0.0     3 0.367         37.134     16.048        0.075      0.717    2.905    1.318     -0.196     -0.037
+  6   grid       R4_sparse 0.5     1 0.183         41.916     18.095        0.073      0.693    2.798   -0.410     -0.171      0.100
+  7   grid       R4_sparse 0.5     2 0.142         43.151     20.651        0.112      0.567    2.614   -0.333     -0.192     -0.018
+  2   grid       R4_sparse 0.0     2 0.258         35.608     15.060        0.092      0.680    2.573    0.756     -0.205      0.043
+  1   grid       R4_sparse 0.0     1 0.183         43.776     17.798        0.099      0.650    2.254   -0.736     -0.181      0.069
+  4   grid       R4_sparse 0.0     4 0.442         39.319     14.834        0.097      0.651    2.117    0.746     -0.080      0.298
+ 29 anchor       R4_sparse 0.5    42 0.217         49.608     18.643        0.114      0.545    1.957   -1.167     -0.198     -0.087
+  8   grid       R4_sparse 0.5     3 0.217         47.695     16.362        0.104      0.570    1.846   -0.841     -0.214      0.010
+ 27   grid R7_kitchen_sink 0.5     8 0.500         39.620     12.046        0.081      0.586    0.978   -0.142     -0.035      0.391
+  9   grid       R4_sparse 0.5     4 0.550         43.141     10.789        0.106      0.615    0.917    0.198     -0.061      0.184
+  5   grid       R4_sparse 0.5     0 0.133         52.266     15.721        0.212      0.384    0.098   -2.917     -0.213      0.023
+ 23   grid R7_kitchen_sink 0.5     4 0.500         42.526      9.760        0.141      0.468   -0.070   -0.764     -0.028      0.322
+ 16   grid R7_kitchen_sink 0.0     6 0.958         29.798      7.655        0.106      0.564   -0.290    1.946      0.119      0.115
+ 31 anchor R7_kitchen_sink 0.5    42 0.517         37.276      8.498        0.095      0.447   -0.364    0.054     -0.044      0.040
+ 15   grid R7_kitchen_sink 0.0     5 0.500         43.056      8.878        0.178      0.415   -0.726   -0.899      0.008     -0.215
+ 25   grid R7_kitchen_sink 0.5     6 0.508         40.830     10.779        0.229      0.464   -0.868   -1.436      0.079      0.303
+ 20   grid R7_kitchen_sink 0.5     1 0.717         43.039      9.037        0.187      0.363   -0.922   -0.396      0.176     -0.008
+ 14   grid R7_kitchen_sink 0.0     4 0.158         53.960     11.218        0.187      0.229   -1.265   -3.355     -0.156      0.048
+ 18   grid R7_kitchen_sink 0.0     8 0.617         35.744      8.743        0.145      0.318   -1.302   -0.643     -0.069     -0.290
+ 12   grid R7_kitchen_sink 0.0     2 0.942         32.699      7.366        0.167      0.373   -1.332    1.158      0.259      0.008
+ 13   grid R7_kitchen_sink 0.0     3 0.575         38.621      7.233        0.182      0.325   -1.418   -0.789     -0.006      0.381
+ 22   grid R7_kitchen_sink 0.5     3 0.933         29.686      6.004        0.152      0.397   -1.553    1.494      0.261     -0.003
+ 17   grid R7_kitchen_sink 0.0     7 0.925         27.952      5.937        0.157      0.310   -1.889    1.052      0.190      0.052
+ 24   grid R7_kitchen_sink 0.5     5 1.000         22.238      5.722        0.166      0.389   -1.947    1.805      0.270     -0.046
+ 26   grid R7_kitchen_sink 0.5     7 0.975         31.727      7.002        0.213      0.310   -1.998    0.877      0.257     -0.033
+ 30 anchor R7_kitchen_sink 0.0    42 0.792         31.264      7.788        0.212      0.294   -2.111    0.038      0.085      0.284
+ 11   grid R7_kitchen_sink 0.0     1 0.850         30.311      6.806        0.213      0.310   -2.193    0.386      0.194      0.083
+ 21   grid R7_kitchen_sink 0.5     2 1.000         20.912      5.116        0.146      0.338   -2.259    1.943      0.292     -0.074
+ 10   grid R7_kitchen_sink 0.0     0 0.567         41.103     10.232        0.267      0.274   -2.279   -2.354     -0.031     -0.276
+ 19   grid R7_kitchen_sink 0.5     0 0.992         25.117      5.896        0.183      0.314   -2.341    1.281      0.292     -0.048

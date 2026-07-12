@@ -1,0 +1,26 @@
+=== Model D (deconfound leg 1): seeker-side shaping x A at fixed sparse hider + pair RE + seed RE — PyMC NUTS ===
+rows=240  runs=60  anchors=4  draws=2000 x 4 chains
+
+                        mean      sd  hdi_2.5%  hdi_97.5%  mcse_mean  mcse_sd   ess_bulk   ess_tail   r_hat
+beta_0               -1.0841  0.3051   -1.6850    -0.4969     0.0082   0.0074  1405.4180  1339.7269  1.0017
+beta_X                2.7664  0.7108    1.3646     4.1410     0.0150   0.0094  2243.5520  3260.7567  1.0014
+beta_A01             -0.1219  0.3133   -0.7608     0.4673     0.0079   0.0046  1579.9459  2588.6189  1.0018
+beta_XA               1.6657  0.9815   -0.3420     3.5060     0.0205   0.0135  2290.4762  3530.0187  1.0014
+sigma_run[R4_sparse]  0.1907  0.1510    0.0033     0.4883     0.0173   0.0068    52.4172    48.7689  1.0880
+sigma_run[R7sk_R4hd]  2.0158  0.4957    1.1286     3.0309     0.0095   0.0064  2643.3215  3579.9332  1.0021
+sigma_anchor          0.2731  0.2967    0.0017     0.8506     0.0081   0.0100   953.6228  1323.5423  1.0038
+sigma_pair            1.8777  0.1154    1.6483     2.0982     0.0016   0.0012  5036.2028  5734.7597  1.0004
+sigma_seed            0.2256  0.1787    0.0017     0.5627     0.0136   0.0060   120.3181    89.4729  1.0543
+
+--- beta_XA (key coefficient) ---
+posterior median = +1.6718
+95% CrI = [-0.2593, +3.6135]
+P(beta > 0) = 0.9545
+
+VERDICT (section 7): REFINE (|beta|=1.672, CrI [-0.259, 3.613])
+
+--- marginal interaction (WR units, logistic-normal approx) ---
+Delta-of-Delta = +0.1526  95% CrI [-0.0271, +0.3335]
+P(DiD > 0) = 0.9499
+(conditional beta_XA is non-collapsibility-inflated; this is
+ the population-averaged effect on the WR scale)
