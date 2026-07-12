@@ -254,9 +254,34 @@ def save_gauntlet(seeker, opponents, suptitle: str, out_path: Path,
     print(f"saved {out_path}  ({out_path.stat().st_size / 1e6:.1f} MB)")
 
 
+def coverage_stats(seeker, hider, env_config, n_episodes: int = 30,
+                   base_seed: int = 500) -> Dict:
+    """Measure what the area-coverage bonus actually paid: unique cells of
+    the env's own 6x6 coverage grid visited by the seeker, per episode and
+    per 100 steps. Used to back the act-5 'patrols instead of chasing'
+    caption with a number instead of an eyeballed trajectory."""
+    half = env_config.arena_half
+    gsz = 6
+    cells_ep, per100, tags = [], [], 0
+    for k in range(n_episodes):
+        ep = run_episode(seeker, hider, env_config, rng_seed=base_seed + k)
+        pos = np.array([f["seeker_pos"] for f in ep["frames"]])
+        ij = np.clip(((pos + half) / (2 * half / gsz)).astype(int), 0, gsz - 1)
+        ncells = len({(a, b) for a, b in ij})
+        cells_ep.append(ncells)
+        per100.append(100.0 * ncells / max(ep["steps"], 1))
+        tags += int(ep["tagged"])
+    return dict(cells=float(np.mean(cells_ep)),
+                per100=float(np.mean(per100)),
+                wr=tags / n_episodes)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--act", type=int, default=None, choices=[1, 2, 3, 4, 5, 6])
+    ap.add_argument("--coverage-stats", action="store_true",
+                    help="Print 6x6-grid coverage rates for the act-5 pair "
+                         "(tourist vs hunter) instead of rendering.")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -273,6 +298,16 @@ def main():
                            obs_dim, act_dim)
 
     ref_hider = hider_of("anchors/R4_sparse/A00/seed_42")
+
+    if args.coverage_stats:
+        tourist = seeker_of("urgency_only_ablation/R7_no_urgency/A00/seed_8")
+        hunter = seeker_of("coverage_ablation/R7_no_coverage/A00/seed_7")
+        for name, pol in [("tourist (coverage, no urgency)", tourist),
+                          ("hunter (no coverage)", hunter)]:
+            s = coverage_stats(pol, ref_hider, env_config)
+            print(f"{name:32s} cells/episode={s['cells']:.1f}/36  "
+                  f"cells/100 steps={s['per100']:.1f}  wr={s['wr']:.2f}")
+        return
 
     if args.act in (None, 1):
         champ = seeker_of("grid/R7_kitchen_sink/A00/seed_2")
@@ -318,7 +353,7 @@ def main():
         ]
         save_gauntlet(
             rescue, opponents,
-            "The fix — shaping + zoo (A=0.5):\n99% vs the pool, no lottery",
+            "Shaping + zoo (A=0.5):\nthis seeker beats 99% of the pool",
             OUT_DIR / "04_zoo_rescue.gif", env_config)
 
     if args.act in (None, 5):
@@ -329,7 +364,7 @@ def main():
              pick_episode(hunter, ref_hider, env_config, want_tagged=True)],
             ["coverage bonus, no urgency  (12% vs anchors)",
              "coverage bonus removed  (89% vs anchors)"],
-            "The coverage trap: paid per grid cell visited, it patrols instead of chasing",
+            "The coverage trap: trained with an exploration bonus, it sweeps past the hider",
             OUT_DIR / "05_coverage_trap.gif", env_config, trail=60)
 
     if args.act in (None, 6):

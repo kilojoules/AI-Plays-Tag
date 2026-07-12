@@ -17,7 +17,7 @@ The repo hosts two research arcs. The first found that **algorithm choice (SAC v
 
 # What Reward Shaping Actually Buys You
 
-*A story in five acts, from a [pre-registered factorial study](experiments/design_c_results.md) of reward shaping × opponent diversity in PPO self-play: 195 training runs, ~100,000 evaluation episodes, one certified result, and two ways to lose. Every agent below is a real checkpoint from the study; every number is from the population evaluations, not the episodes shown. Regenerate the animations with `experiments/animate_design_c_story.py`.*
+*A story in five acts, from a [pre-registered factorial study](experiments/design_c_results.md) of reward shaping × opponent diversity in PPO self-play: 195 training runs (plus three 10M-step pilots), ~143,000 evaluation episodes, one certified result, and two ways to lose. Every agent below is a real checkpoint from the study; every number is from the population evaluations, not the episodes shown. Regenerate the animations with `experiments/animate_design_c_story.py`.*
 
 The two reward functions being compared:
 
@@ -36,7 +36,7 @@ The two seekers below trained with **identical rewards (R7), hyperparameters, en
   <img src="docs/design_c/01_seed_lottery.gif" alt="Two identically-configured seekers vs the same hider: seed 2 hunts it down, seed 4 wanders" width="720">
 </p>
 
-Dense shaping doesn't just buy a better average seeker (+30pp win rate over sparse) — it buys a **lottery ticket**. Between-seed variance under R7 is 3–4× higher than under R4 (σ = 2.0 vs 0.65 log-odds, non-overlapping credible intervals); seeds range from 27% to 99% against a common pool.
+Dense shaping doesn't just buy a better average seeker (+29pp win rate over sparse at A=0, +54pp with zoo training) — it buys a **lottery ticket**. Between-seed variance under R7 is 3–4× higher than under R4 (σ = 2.0 vs 0.65 log-odds, non-overlapping credible intervals); within the A=0 cell alone, seeds range from 22% to 99% against the same evaluation panel.
 
 And the training curves show *nothing*. Every R7 seeker — the 99% ones and the 27% ones — reaches 88–96% win rate against its own training partner. In self-play, the win rate you watch during training measures performance against one co-evolving opponent, and it is not commensurable across runs. Policy quality only exists relative to a population.
 
@@ -62,17 +62,17 @@ Sparse reward, pure self-play: 14 of 20 seeds never learn pursuit *at all* — n
   <img src="experiments/results/design_c/anchor_panel/run_classification.png" alt="Failure-mode taxonomy: basins never learn, over-specialists beat only their partner" width="640">
 </p>
 
-**Sparse fails by basin. Shaped fails by over-specialization.** They need different medicine — which is why the two remedies in this study interact instead of substituting.
+**Sparse fails by basin. Shaped fails by over-specialization.** (A third, rarer mode — the *hider* winning the arms race — appears when the hider's speed advantage grows; see the HSM flank in the results doc.) The two main modes need different medicine — which is why the two remedies in this study interact instead of substituting.
 
 ## Act III — The trap is a reward term
 
-Which shaping term makes over-specialists? Ablating them one at a time points at the **area-coverage bonus** — a reward per new grid cell visited, added to encourage exploration. Watch what it actually teaches, once the escalating time pressure that normally corrals it is removed:
+Which shaping term makes over-specialists? Ablating them one at a time points at the **area-coverage bonus** — a reward per new cell of a 6×6 grid visited, added to encourage exploration. Watch a seeker trained with the bonus (and without the escalating time pressure that appears to counteract it — that interaction is directionally consistent but not statistically certified):
 
 <p align="center">
-  <img src="docs/design_c/05_coverage_trap.gif" alt="A coverage-paid seeker patrols the arena walls, sweeping past the hider without engaging; with the bonus removed, the seeker hunts and tags" width="720">
+  <img src="docs/design_c/05_coverage_trap.gif" alt="A coverage-trained seeker sweeps along the walls past the hider without engaging; with the bonus removed, the seeker hunts and tags" width="720">
 </p>
 
-The left seeker is *patrolling*, not chasing — long wall-following sweeps straight past the hider. It was paid to visit grid cells, and in self-play it could keep beating its stationary training partner while doing so, so nothing ever corrected it. Remove the coverage bonus and the cell goes **15/15 healthy** with the best mean of any cell (0.82); remove coverage *and* urgency and most of the between-seed variance disappears with it (σ: 1.7–2.1 → 0.95).
+The left seeker sweeps straight past a hider it should be chasing. Interestingly, it is *not* farming coverage at eval time — we measured exactly what the bonus pays, and the failed seeker visits only 7.7 of 36 grid cells per episode, covering *less* new area per step than the healthy hunter on the right (6.3 vs 9.7 cells per 100 steps; `--coverage-stats`). The bonus does its damage during *training*: it rewards a policy for something other than tracking the opponent, and self-play never corrects the drift because the co-evolving partner is beatable anyway. The causal evidence is the ablation: remove the coverage bonus and the cell goes **15/15 healthy** with the best mean of any cell (0.82); remove coverage *and* urgency and most of the between-seed variance disappears with it (σ: 1.7–2.1 → 0.95).
 
 One caveat the follow-up experiments added: against a *sparse-trained* (narrower) partner, over-specialists re-emerge even without coverage. Partner narrowness enables the trap; coverage amplifies it.
 
@@ -84,7 +84,7 @@ Zoo training replaces the live training partner, with probability A, by a random
   <img src="docs/design_c/06_zoo_dose.gif" alt="The same seed at A=0, 0.1, and 0.5: over-specialist, healthy, healthy — the lottery ticket gets de-risked" width="1000">
 </p>
 
-At A=0 this seed guards the safe zone where its partner used to hide — an over-specialist (0.49). At A=0.1 it generalizes (0.92). At A=0.5 it is flawless (1.00). Across cells, the dose–response is mode-specific: **basins vanish by A ≥ 0.1** (a small dose breaks the never-learn equilibrium), while **over-specialization shrinks ~3× by A = 0.5** but keeps a tail — un-narrowing a policy takes sustained diversity. A behavioral panel of the final hiders shows A works through the *history* the seeker is exposed to, not by making the final partner more diverse.
+At A=0 this seed loiters near the safe zone instead of engaging the hider in the corner — an over-specialist (0.49 against the panel, 1.00 against its own partner). At A=0.1 it generalizes (0.92). At A=0.5 it is flawless (1.00). Across cells, the dose–response is mode-specific: **basins vanish by A ≥ 0.1** (a small dose breaks the never-learn equilibrium), while **over-specialization shrinks ~3× by A = 0.5** but keeps a tail — un-narrowing a policy takes sustained diversity. A behavioral panel of the final hiders shows A works through the *history* the seeker is exposed to, not by making the final partner more diverse.
 
 ## Act V — Complements, certified
 
@@ -93,7 +93,7 @@ We pre-registered the natural hypothesis: zoo training *substitutes* for shaping
 > **Shaping × zoo interaction: β = +2.05 log-odds, 95% CrI [+0.72, +3.45], P(>0) = 0.999.**
 > On the win-rate scale: zoo training adds **+21pp under dense shaping** [+5, +37] and nothing under sparse (β_A ≈ 0).
 
-They are **complements**: shaping is what makes opponent diversity useful (a basin learns nothing from diverse opponents), and diversity is what de-risks shaping (it's the anti-over-specialization treatment). The combination is the only cell with no lottery:
+They are **complements**: shaping is what makes opponent diversity useful (a basin learns nothing from diverse opponents), and diversity is what de-risks shaping (it's the anti-over-specialization treatment). Note the study offers *two* fixes for the lottery — removing the coverage term is the reward-side fix (Act III), zoo dose is the training-side fix — and they attack the same failure mode from different ends. Among the pre-registered cells, shaped + zoo is the strongest and safest (mean 0.81; over-specialists thinned to 2/20, not zero — the lottery is tamed, not abolished):
 
 <p align="center">
   <img src="docs/design_c/04_zoo_rescue.gif" alt="A shaped, zoo-trained seeker tags sparse-trained, shaped, and zoo-trained hiders in sequence — 3 for 3" width="420">
@@ -160,6 +160,8 @@ When we [re-evaluated with Optuna-optimized hyperparameters](https://kilojoules.
 - SAC exhibits massive forgetting (FR=0.36) but still produces the strongest agents
 
 The initial zoo improvement was an artifact of within-run evaluation — the zoo helped the seeker beat *its own* hider, but not arbitrary opponents.
+
+> **How does "zoo doesn't matter" square with the certified +21pp zoo effect in the story above?** Different regimes, and — more importantly — different questions. This null compared A=0 to A=1 (full zoo replacement) with Optuna-tuned hyperparameters in a SAC-dominated cross-algorithm gauntlet, and asked about the zoo's *main effect*. The pre-registered study compared A=0 to A=0.5 in PPO and found the zoo effect exists only in *interaction* with dense reward shaping: +21pp for shaped agents, nothing for sparse ones (β_A ≈ 0). Averaged over reward conditions — which is what a main-effects search does — the interaction washes out to roughly the null this section reports. The earlier analysis wasn't wrong; it was asking a question whose answer is "it depends," and couldn't see the "depends."
 
 ---
 
@@ -292,7 +294,7 @@ Over 1,500 training runs across all experiments:
 | FR sweep (v1 + v2) | 300 | 5M | 1.5B |
 | HPO (Optuna) | 200 | 1M | 200M |
 | Entropy ablation | 33 | 5M | 165M |
-| Design C (prereg factorial + ablations + deconfound) | 198 | 5M | ~1B |
+| Design C (prereg factorial + ablations + deconfound) | 195 + 3 pilots | 5M (pilots 10M) | ~1B |
 
 All evaluated via cross-config gauntlets (20-50 episodes per matchup).
 
