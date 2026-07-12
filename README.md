@@ -15,6 +15,42 @@ Two RL agents learn to play tag in a 2D arena with obstacles. The **seeker** (re
 
 ---
 
+## The Seed Lottery
+
+Our most surprising finding, from a [pre-registered 195-run factorial study](experiments/design_c_results.md) of reward shaping × opponent diversity in PPO self-play. The two agents below trained with **identical rewards, hyperparameters, environment, and steps**. The only difference is the random seed. Both are chasing the *same* reference hider:
+
+<p align="center">
+  <img src="docs/design_c/01_seed_lottery.gif" alt="Two identically-configured seekers vs the same hider: seed 2 hunts it down, seed 4 wanders" width="720">
+</p>
+
+Dense reward shaping doesn't just buy a better average seeker (+30pp win rate) — it buys a **lottery ticket**: between-seed variance is 3–4× higher than under sparse reward (σ = 2.0 vs 0.65 log-odds, non-overlapping CrIs). Same code, seeds ranging from 27% to 99% against a common pool. And the training curves show *nothing* — every shaped seeker reaches 88–96% win rate against its own training partner.
+
+Which is the tell. Here's what a losing lottery ticket actually looks like:
+
+<p align="center">
+  <img src="docs/design_c/02_overspecialist.gif" alt="The same seeker tags its own training partner instantly but cannot touch a reference hider" width="720">
+</p>
+
+**The over-specialist** — one of the two failure modes behind the variance. It didn't fail to learn; it learned the *wrong thing*: a perfect counter to the one hider it co-evolved with (100% win rate), useless against anyone else (13%). In self-play, your opponent is part of your reward function — and checkpoint diagnostics show these agents acquire real pursuit skill mid-training, then narrow onto their partner.
+
+The obvious remedy — drop the shaping — is worse. This is the other failure mode, the **basin**:
+
+<p align="center">
+  <img src="docs/design_c/03_sparse_basin.gif" alt="A sparse-reward seeker wiggles at the wall, failing against its own partner and a reference hider alike" width="720">
+</p>
+
+Sparse terminal reward, pure self-play: 14 of 20 seeds never learn pursuit *at all* — not even against their own training partner. And zoo training does nothing for them (β_A ≈ 0): opponent diversity has nothing to teach an agent that never picked up the chase.
+
+Which sets up the actual result. We registered the hypothesis that zoo training *substitutes* for reward shaping. The data certified the opposite — they are **complements** (interaction β = +2.05 log-odds, 95% CrI [+0.72, +3.45], P = 0.999): shaping is what makes zoo training useful, and zoo training is what de-risks shaping. A small dose (A ≥ 0.1) eliminates basins; a large dose (A = 0.5) thins over-specialization ~3×. Shaped + zoo-trained seekers hit 99% against the pool — no lottery:
+
+<p align="center">
+  <img src="docs/design_c/04_zoo_rescue.gif" alt="A shaped, zoo-trained seeker tags sparse-trained, shaped, and zoo-trained hiders in sequence — 3 for 3" width="420">
+</p>
+
+Mixed-reward control cells pin both effects on the *seeker's own* reward (not opponent quality), and a role-correct behavioral analysis shows the lottery is **exploration variance** — strong seekers all converge on the same strategy (behavior–skill correlation 0.81); the seed decides who finds it. Full statistical record, pre-registration chain, and honest errata: [`experiments/design_c_results.md`](experiments/design_c_results.md). Regenerate these animations with `experiments/animate_design_c_story.py`.
+
+---
+
 ## The Game
 
 A 30x30 arena with 4 obstacles and a central safe zone. Each agent observes position, velocity, the opponent's relative state, and **36 vision rays** (120 FOV). Actions are continuous 2D accelerations. Episodes last 200 steps; the hider has a speed advantage (up to 20% faster).
