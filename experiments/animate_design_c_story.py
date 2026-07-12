@@ -13,6 +13,11 @@ Four GIFs (docs/design_c/), one per act of the story:
                          fails even against its own training partner.
   04_zoo_rescue.gif      Shaping + zoo (A=0.5) champion running the
                          anchor gauntlet with a live score.
+  05_coverage_trap.gif   The reward-term mechanism: a coverage-paid,
+                         urgency-free seeker patrols the arena instead
+                         of chasing; removing the bonus restores pursuit.
+  06_zoo_dose.gif        The same seed at A=0 / 0.1 / 0.5 — the lottery
+                         ticket gets de-risked by zoo dose.
 
 Policies referenced here are the exact runs quoted in
 experiments/design_c_results.md; win rates in captions come from the
@@ -189,7 +194,8 @@ def draw_frame(ax, episode: Dict, frame_idx: int, panel_title: str,
 
 
 def save_side_by_side(episodes: List[Dict], titles: List[str], suptitle: str,
-                      out_path: Path, env_config, hold_frames: int = 24):
+                      out_path: Path, env_config, hold_frames: int = 24,
+                      trail: int = 24):
     """Panels run synchronized; finished panels hold their final frame."""
     n = len(episodes)
     fig, axes = plt.subplots(1, n, figsize=(5.4 * n, 6.0))
@@ -201,7 +207,7 @@ def save_side_by_side(episodes: List[Dict], titles: List[str], suptitle: str,
     def animate(k):
         idx = min(k * FRAME_STRIDE, longest - 1)
         for ax, ep, t in zip(axes, episodes, titles):
-            draw_frame(ax, ep, idx, t, env_config)
+            draw_frame(ax, ep, idx, t, env_config, trail=trail)
         fig.suptitle(suptitle, fontsize=14, fontweight="bold")
         return []
 
@@ -250,7 +256,7 @@ def save_gauntlet(seeker, opponents, suptitle: str, out_path: Path,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--act", type=int, default=None, choices=[1, 2, 3, 4])
+    ap.add_argument("--act", type=int, default=None, choices=[1, 2, 3, 4, 5, 6])
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,6 +320,30 @@ def main():
             rescue, opponents,
             "The fix — shaping + zoo (A=0.5):\n99% vs the pool, no lottery",
             OUT_DIR / "04_zoo_rescue.gif", env_config)
+
+    if args.act in (None, 5):
+        tourist = seeker_of("urgency_only_ablation/R7_no_urgency/A00/seed_8")
+        hunter = seeker_of("coverage_ablation/R7_no_coverage/A00/seed_7")
+        save_side_by_side(
+            [pick_episode(tourist, ref_hider, env_config, want_tagged=False),
+             pick_episode(hunter, ref_hider, env_config, want_tagged=True)],
+            ["coverage bonus, no urgency  (12% vs anchors)",
+             "coverage bonus removed  (89% vs anchors)"],
+            "The coverage trap: paid per grid cell visited, it patrols instead of chasing",
+            OUT_DIR / "05_coverage_trap.gif", env_config, trail=60)
+
+    if args.act in (None, 6):
+        doses = [
+            ("grid/R7_kitchen_sink/A00/seed_0", "A = 0  —  over-specialist (0.49)", False),
+            ("a_sweep/R7_kitchen_sink/A10/seed_0", "A = 0.1  —  healthy (0.92)", True),
+            ("grid/R7_kitchen_sink/A50/seed_0", "A = 0.5  —  healthy (1.00)", True),
+        ]
+        save_side_by_side(
+            [pick_episode(seeker_of(rel), ref_hider, env_config, want_tagged=w)
+             for rel, _, w in doses],
+            [t for _, t, _ in doses],
+            "Same seed, same reward — only the zoo dose differs",
+            OUT_DIR / "06_zoo_dose.gif", env_config)
 
 
 if __name__ == "__main__":

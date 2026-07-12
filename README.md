@@ -9,45 +9,107 @@
 
 Two RL agents learn to play tag in a 2D arena with obstacles. The **seeker** (red) tries to catch the **hider** (blue) before time runs out. We train agents with PPO and SAC across multiple paradigms — self-play, zoo training, reward shaping — and pit them against each other to find what actually matters.
 
-**The big finding: algorithm choice (SAC vs PPO) dominates everything else.** Zoo mixing, reward presets, hyperparameter tuning — none of it closes the gap.
+The repo hosts two research arcs. The first found that **algorithm choice (SAC vs PPO) dominated everything we tried** in the cross-method gauntlet. The second — a pre-registered, 195-run factorial study — asked the question that arc left open: *what does reward shaping actually do in self-play?* The answer is the story below.
 
 **[Entropy Ablation](https://kilojoules.github.io/AI-Plays-Tag/entropy_study/)** | **[Reward Shaping Study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/)** | **[HPO & Zoo Mixing Study](https://kilojoules.github.io/AI-Plays-Tag/hpo_study/)** | **[Project Page](https://kilojoules.github.io/AI-Plays-Tag/)**
 
 ---
 
-## The Seed Lottery
+# What Reward Shaping Actually Buys You
 
-Our most surprising finding, from a [pre-registered 195-run factorial study](experiments/design_c_results.md) of reward shaping × opponent diversity in PPO self-play. The two agents below trained with **identical rewards, hyperparameters, environment, and steps**. The only difference is the random seed. Both are chasing the *same* reference hider:
+*A story in five acts, from a [pre-registered factorial study](experiments/design_c_results.md) of reward shaping × opponent diversity in PPO self-play: 195 training runs, ~100,000 evaluation episodes, one certified result, and two ways to lose. Every agent below is a real checkpoint from the study; every number is from the population evaluations, not the episodes shown. Regenerate the animations with `experiments/animate_design_c_story.py`.*
+
+The two reward functions being compared:
+
+| | **R4 sparse** | **R7 kitchen sink** |
+|---|---|---|
+| terminal | ±10 tag, +6 survive | ±10 tag, +6 survive |
+| seeker shaping | — | pursuit-distance gradient, escalating time pressure |
+| hider shaping | — | distance terms, wall penalty, speed bonus, survival trickle |
+| both roles | — | area-coverage bonus (paid per new grid cell visited) |
+
+## Act I — The seed lottery
+
+The two seekers below trained with **identical rewards (R7), hyperparameters, environment, and steps**. The only difference is the random seed. Both are chasing the *same* reference hider:
 
 <p align="center">
   <img src="docs/design_c/01_seed_lottery.gif" alt="Two identically-configured seekers vs the same hider: seed 2 hunts it down, seed 4 wanders" width="720">
 </p>
 
-Dense reward shaping doesn't just buy a better average seeker (+30pp win rate) — it buys a **lottery ticket**: between-seed variance is 3–4× higher than under sparse reward (σ = 2.0 vs 0.65 log-odds, non-overlapping CrIs). Same code, seeds ranging from 27% to 99% against a common pool. And the training curves show *nothing* — every shaped seeker reaches 88–96% win rate against its own training partner.
+Dense shaping doesn't just buy a better average seeker (+30pp win rate over sparse) — it buys a **lottery ticket**. Between-seed variance under R7 is 3–4× higher than under R4 (σ = 2.0 vs 0.65 log-odds, non-overlapping credible intervals); seeds range from 27% to 99% against a common pool.
 
-Which is the tell. Here's what a losing lottery ticket actually looks like:
+And the training curves show *nothing*. Every R7 seeker — the 99% ones and the 27% ones — reaches 88–96% win rate against its own training partner. In self-play, the win rate you watch during training measures performance against one co-evolving opponent, and it is not commensurable across runs. Policy quality only exists relative to a population.
+
+## Act II — Two ways to lose
+
+What does a losing ticket look like? Watch the same seeker play two opponents:
 
 <p align="center">
   <img src="docs/design_c/02_overspecialist.gif" alt="The same seeker tags its own training partner instantly but cannot touch a reference hider" width="720">
 </p>
 
-**The over-specialist** — one of the two failure modes behind the variance. It didn't fail to learn; it learned the *wrong thing*: a perfect counter to the one hider it co-evolved with (100% win rate), useless against anyone else (13%). In self-play, your opponent is part of your reward function — and checkpoint diagnostics show these agents acquire real pursuit skill mid-training, then narrow onto their partner.
+This is the **over-specialist** — the shaped arm's characteristic failure. It didn't fail to learn; it learned the *wrong thing*: a perfect counter to the one hider it co-evolved with (100%), useless against anyone else (13%). Checkpoint diagnostics show these agents acquire genuine pursuit skill mid-training, then narrow onto their partner. In self-play, your opponent is part of your reward function.
 
-The obvious remedy — drop the shaping — is worse. This is the other failure mode, the **basin**:
+The obvious remedy — drop the shaping — fails differently. This is the **basin**, the sparse arm's characteristic failure:
 
 <p align="center">
   <img src="docs/design_c/03_sparse_basin.gif" alt="A sparse-reward seeker wiggles at the wall, failing against its own partner and a reference hider alike" width="720">
 </p>
 
-Sparse terminal reward, pure self-play: 14 of 20 seeds never learn pursuit *at all* — not even against their own training partner. And zoo training does nothing for them (β_A ≈ 0): opponent diversity has nothing to teach an agent that never picked up the chase.
+Sparse reward, pure self-play: 14 of 20 seeds never learn pursuit *at all* — not even against their own training partner. Classifying all 175 runs by (population win rate, own-partner win rate) resolves the lottery into these two modes:
 
-Which sets up the actual result. We registered the hypothesis that zoo training *substitutes* for reward shaping. The data certified the opposite — they are **complements** (interaction β = +2.05 log-odds, 95% CrI [+0.72, +3.45], P = 0.999): shaping is what makes zoo training useful, and zoo training is what de-risks shaping. A small dose (A ≥ 0.1) eliminates basins; a large dose (A = 0.5) thins over-specialization ~3×. Shaped + zoo-trained seekers hit 99% against the pool — no lottery:
+<p align="center">
+  <img src="experiments/results/design_c/anchor_panel/run_classification.png" alt="Failure-mode taxonomy: basins never learn, over-specialists beat only their partner" width="640">
+</p>
+
+**Sparse fails by basin. Shaped fails by over-specialization.** They need different medicine — which is why the two remedies in this study interact instead of substituting.
+
+## Act III — The trap is a reward term
+
+Which shaping term makes over-specialists? Ablating them one at a time points at the **area-coverage bonus** — a reward per new grid cell visited, added to encourage exploration. Watch what it actually teaches, once the escalating time pressure that normally corrals it is removed:
+
+<p align="center">
+  <img src="docs/design_c/05_coverage_trap.gif" alt="A coverage-paid seeker patrols the arena walls, sweeping past the hider without engaging; with the bonus removed, the seeker hunts and tags" width="720">
+</p>
+
+The left seeker is *patrolling*, not chasing — long wall-following sweeps straight past the hider. It was paid to visit grid cells, and in self-play it could keep beating its stationary training partner while doing so, so nothing ever corrected it. Remove the coverage bonus and the cell goes **15/15 healthy** with the best mean of any cell (0.82); remove coverage *and* urgency and most of the between-seed variance disappears with it (σ: 1.7–2.1 → 0.95).
+
+One caveat the follow-up experiments added: against a *sparse-trained* (narrower) partner, over-specialists re-emerge even without coverage. Partner narrowness enables the trap; coverage amplifies it.
+
+## Act IV — Opponent diversity is a dose
+
+Zoo training replaces the live training partner, with probability A, by a random snapshot from the partner's history. Here is the *same seed* — same initialization, same reward — at three doses:
+
+<p align="center">
+  <img src="docs/design_c/06_zoo_dose.gif" alt="The same seed at A=0, 0.1, and 0.5: over-specialist, healthy, healthy — the lottery ticket gets de-risked" width="1000">
+</p>
+
+At A=0 this seed guards the safe zone where its partner used to hide — an over-specialist (0.49). At A=0.1 it generalizes (0.92). At A=0.5 it is flawless (1.00). Across cells, the dose–response is mode-specific: **basins vanish by A ≥ 0.1** (a small dose breaks the never-learn equilibrium), while **over-specialization shrinks ~3× by A = 0.5** but keeps a tail — un-narrowing a policy takes sustained diversity. A behavioral panel of the final hiders shows A works through the *history* the seeker is exposed to, not by making the final partner more diverse.
+
+## Act V — Complements, certified
+
+We pre-registered the natural hypothesis: zoo training *substitutes* for shaping (dense reward's advantage should shrink as A grows). The data certified the opposite, after a pre-registered power extension to n=20 seeds per cell:
+
+> **Shaping × zoo interaction: β = +2.05 log-odds, 95% CrI [+0.72, +3.45], P(>0) = 0.999.**
+> On the win-rate scale: zoo training adds **+21pp under dense shaping** [+5, +37] and nothing under sparse (β_A ≈ 0).
+
+They are **complements**: shaping is what makes opponent diversity useful (a basin learns nothing from diverse opponents), and diversity is what de-risks shaping (it's the anti-over-specialization treatment). The combination is the only cell with no lottery:
 
 <p align="center">
   <img src="docs/design_c/04_zoo_rescue.gif" alt="A shaped, zoo-trained seeker tags sparse-trained, shaped, and zoo-trained hiders in sequence — 3 for 3" width="420">
 </p>
 
-Mixed-reward control cells pin both effects on the *seeker's own* reward (not opponent quality), and a role-correct behavioral analysis shows the lottery is **exploration variance** — strong seekers all converge on the same strategy (behavior–skill correlation 0.81); the seed decides who finds it. Full statistical record, pre-registration chain, and honest errata: [`experiments/design_c_results.md`](experiments/design_c_results.md). Regenerate these animations with `experiments/animate_design_c_story.py`.
+Two follow-ups pin down the causality. **Whose reward?** In self-play the "reward" factor changes the opponent's training too — so we ran mixed-reward cells (shaped seeker, sparse hider). Seeker-side shaping alone reproduces the main effect (certified), the interaction, and the variance inflation; toggling hider-side shaping does nothing. The effects live in the agent's own reward, not opponent quality. **Why the variance?** A behavioral fingerprint of all 32 gauntlet policies correlates with the outcome skill axis at |r| = 0.81 — strong seekers all converge on the *same* strategy. The lottery is **exploration variance**: the seed decides who finds the strategy, not which of several strategies you get.
+
+<p align="center">
+  <img src="experiments/results/design_c/behavior/behavior_vs_svd.png" alt="Behavior PC1 vs outcome SVD U1: r = 0.81 — behavior aligns with the skill axis" width="640">
+</p>
+
+## Why you can trust this
+
+The study was pre-registered before data collection (v1–v2), amended in the open when SAC failed its pilot gate, and power-extended under a frozen fixed-n protocol (v3). It then survived a full adversarial review — three independent audit passes over the code, statistics, and pre-registration chain — which found real bugs (a role-indexing bug in behavioral features, a GAE off-by-one shared by all runs, a vacuous adaptive-evaluation mechanism) and real protocol deviations, all disclosed in the [errata section](experiments/design_c_results.md) with bounding experiments showing none of them drive the headline claims. The confirmatory result also survives an overdispersion-robust refit (+2.40 [+0.77, +4.05]). Raw evaluation data ships in this repo under `experiments/results/design_c/`.
+
+One connection to the repo's first arc: SAC's entropy bootstrap makes sparse reward workable (R4-sparse SAC was among our best agents), while PPO's sparse runs basin. Both stories are about the same thing — *early exploration determines final strength* — SAC buys it with entropy, PPO has to buy it with reward shaping, and then pay the over-specialization tax that shaping incurs.
 
 ---
 
@@ -144,9 +206,9 @@ Across all 8 reward presets, the learned entropy schedule is nearly identical �
 
 ---
 
-## Reward Shaping
+## The First Reward-Shaping Sweep (prologue to the story above)
 
-The [reward shaping study](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/) tested 8 reward presets across PPO and SAC (48 training runs, 5M timesteps each):
+Before the pre-registered study, an exploratory [reward shaping sweep](https://kilojoules.github.io/AI-Plays-Tag/reward_shaping/) tested 8 reward presets across PPO and SAC (48 training runs, 5M timesteps each). Its two extremes — R4 sparse and R7 kitchen sink — became the factor levels of the factorial study:
 
 - **Sparse rewards fail for PPO** but SAC's entropy bonus compensates — R4 Sparse PPO is the worst agent (7%), R4 Sparse SAC is the best hider (87% survival)
 - **Anti-degenerate shaping matters most** — wall proximity penalties and speed bonuses prevent corner camping more effectively than increasing reward magnitude
@@ -212,6 +274,10 @@ experiments/
   reward_gauntlet.py       Within-preset cross-evaluation
   plot_cross_method.py     Generate gauntlet heatmaps and strength plots
   fr_sweep_tasks.py        SLURM task generators for large sweeps
+  design_c_*.py            Pre-registered shaping x zoo study: task tables,
+                           gauntlet, anchor-panel evals, GLMM/MCMC fits,
+                           trajectory analysis (see design_c_results.md)
+  animate_design_c_story.py  README story animations (docs/design_c/)
 ```
 
 ## Total Compute
@@ -226,6 +292,7 @@ Over 1,500 training runs across all experiments:
 | FR sweep (v1 + v2) | 300 | 5M | 1.5B |
 | HPO (Optuna) | 200 | 1M | 200M |
 | Entropy ablation | 33 | 5M | 165M |
+| Design C (prereg factorial + ablations + deconfound) | 198 | 5M | ~1B |
 
 All evaluated via cross-config gauntlets (20-50 episodes per matchup).
 
