@@ -28,6 +28,8 @@ We trace this dominance to a brief high-entropy bootstrapping phase: auto-tuned 
 Transplant experiments reveal that the advantage is encoded in the \emph{actor's} first hidden layer, not the critic: freezing the actor after bootstrapping produces stronger agents than continued training (57.9\% vs 38.9\% combined strength), and pairing the bootstrapped actor with a randomly initialized critic recovers 51.6\%.
 The qualitative mechanism---a universal entropy decay schedule followed by actor feature crystallization---transfers from 2D tag to 3D MuJoCo Ant Sumo, though quantitative optima are environment-specific.
 These findings invert the primacy bias narrative: in competitive settings, early features are not a liability to be periodically reset, but the most valuable thing the agent learns.
+% NEW (Design C act) — added 2026-07; integrate or split into companion paper:
+In a complementary pre-registered factorial study of PPO self-play, we find that reward shaping and opponent diversity are \emph{complements}, not substitutes ($\beta_{RA}=+2.05$ log-odds, $95\%$ CrI $[+0.72,+3.45]$): zoo training only helps shaped agents, dense shaping trades a $+30$pp mean improvement for a $3$--$4\times$ seed lottery, and mixed-reward control cells localize both effects to the \emph{seeker's own} reward rather than opponent quality.
 \end{abstract}
 
 % ============================================================
@@ -123,6 +125,251 @@ These findings invert the primacy bias narrative: in competitive settings, early
 \textbf{TODO: Write cross-domain section.}
 
 % ============================================================
+\section{Reward Shaping and Opponent Diversity Are Complements:\\A Pre-Registered Factorial Study}
+\label{sec:designc}
+% ============================================================
+% NOTE (integration): this act studies PPO-only zoo self-play. Its SAC
+% pilots collapsed under DEFAULT hyperparameters in the zoo protocol
+% (HP-BROKEN gate), whereas sec:dominance reports SAC dominance in the
+% cross-method gauntlet. These are different training protocols and HP
+% regimes — reconcile explicitly in sec:discussion when writing it.
+
+A natural follow-up to the null results of Section~\ref{sec:dominance}
+is whether the two standard remedies for sparse-reward self-play ---
+reward shaping \cite{ng1999shaping} and opponent diversity
+\cite{bansal2018competitive,baker2020emergent} --- are substitutes:
+does training against a zoo of past opponents deliver what dense
+shaping delivers, making shaping unnecessary?
+We pre-registered this question \cite{nosek2018prereg} as a $2\times2$
+factorial in PPO \cite{schulman2017ppo} zoo self-play and answer it in
+the negative --- and in the opposite direction: \textbf{shaping and
+zoo training are complements}. Zoo training does nothing for
+sparse-reward agents, dense shaping buys its large mean improvement at
+the price of a $3$--$4\times$ between-seed variance inflation, and zoo
+training is what tames that variance.
+
+\subsection{Design, pre-registration, and evaluation}
+\label{sec:designc-design}
+
+Two reward presets bracket the shaping axis: \textsc{R4-sparse}
+(terminal $\pm 10$ tag / $+6$ survival only, both roles) and
+\textsc{R7-kitchen-sink} (eight dense terms: seeker pursuit gradient
+and escalating urgency; hider distance, wall-proximity, minimum-speed
+and survival terms; a both-roles area-coverage bonus).
+Zoo intensity $A\in\{0,0.5\}$ is the probability that the seeker's
+rollout opponent is a uniformly sampled past snapshot of its
+co-evolving hider rather than the live hider.
+All runs: 5M steps, HSM $=1.15$, \texttt{four\_corners} layout,
+identical PPO hyperparameters.
+The design, decision thresholds, and analysis model were pre-registered
+before data collection (v1--v2) with a pre-registered power extension
+to $n{=}20$ seeds per cell (v3, frozen before launch, fixed-$n$, no
+interim fits); 195 training runs total.
+Following Section~\ref{sec:env}'s lesson that within-run metrics
+mislead --- every \textsc{R7} seeker reaches 88--96\% training win rate
+against its own hider while spanning 27--100\% against a common
+population --- all outcomes are population evals
+\cite{balduzzi2018reevaluating}: a $32\times32$ cross-pool gauntlet
+(99{,}200 episodes) and a fixed 4-anchor panel ($175$ runs $\times$ 5
+opponents $\times$ 30 episodes).
+
+The confirmatory estimand is the reward$\times$zoo interaction
+$\beta_{RA}$ in a Bayesian logistic mixed-effects model (NUTS;
+Binomial per (run, anchor) counts; random intercepts per run and per
+anchor; $\sigma_{\text{run}}$ stratified by reward), with a
+pre-registered PURSUE/REFINE/KILL rule at
+$|\beta_{RA}|\geq\log 1.25$ and 95\% CrI excluding zero.
+
+\subsection{Confirmatory result: complementarity, certified}
+\label{sec:designc-confirm}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrr}
+\toprule
+parameter & median & 95\% CrI \\
+\midrule
+$\beta_R$ (shaping main effect) & $+1.57$ & $[+0.68,+2.45]$ \\
+$\beta_A$ (zoo main effect) & $-0.16$ & $[-0.58,+0.25]$ \\
+$\boldsymbol{\beta_{RA}}$ (interaction) & $\boldsymbol{+2.05}$ & $\boldsymbol{[+0.72,+3.45]}$ \\
+$\sigma_{\text{run}}[\textsc{R4}]$ & $0.65$ & $[0.49,0.83]$ \\
+$\sigma_{\text{run}}[\textsc{R7}]$ & $2.00$ & $[1.49,2.54]$ \\
+\midrule
+$\beta_{RA}$, + pair/seed REs & $+2.40$ & $[+0.77,+4.05]$ \\
+interaction, marginal (WR) & $+21$pp & $[+5.2,+36.9]$ \\
+\bottomrule
+\end{tabular}
+\caption{Registered test at $n{=}20$/cell (80 runs, 320 binomial
+rows). $P(\beta_{RA}>0)=0.9989$: \textbf{PURSUE}. Bottom rows:
+robustness refit adding matchup-level overdispersion and shared-seed
+random effects, and the population-averaged interaction on the
+win-rate scale. The certified sign is \emph{opposite} the registered
+substitution hypothesis.}
+\label{tab:designc-confirm}
+\end{table}
+
+Cell mean win rates (vs.\ the anchor panel, $n{=}20$ each):
+\textsc{R4} $0.31/0.27$ at $A{=}0/0.5$; \textsc{R7} $0.60/0.81$.
+Zoo training does nothing under sparse reward ($\beta_A\approx 0$) and
+adds $+21$pp under dense shaping
+(Table~\ref{tab:designc-confirm}) --- the registered substitution
+hypothesis ($\beta_{RA}<0$) is rejected with the effect certified in
+the \emph{opposite} direction after the pre-registered power
+extension.
+The estimate never wavered across three progressively larger
+evaluation populations ($+1.39\to+1.70\to+2.05$); $n{=}20$ per cell
+bought the precision to certify it.
+The verdict survives an adversarial robustness battery: adding
+matchup-level overdispersion (the $\sigma_{\text{pair}}=2.07$ we find
+justifies it) and shared-seed random effects widens but does not move
+the interval, a hardware-batch covariate is null ($+0.05$
+$[-0.41,+0.52]$), and the effect reproduces under a corrected
+advantage estimator (Section~\ref{sec:designc-robust}).
+
+\subsection{The seed lottery: variance is the phenomenon}
+\label{sec:designc-variance}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\columnwidth]{figures/design_c_taxonomy.png}
+\caption{Failure-mode taxonomy over 175 runs: anchor-panel mean vs.\
+own-hider win rate. \emph{Basins} (both low) never learn pursuit;
+\emph{over-specializers} (own $\geq 0.8$, panel $<0.5$) beat their
+co-evolved partner and lose broadly. Sparse-reward failures are
+basins; dense-reward failures are over-specializers; zoo dose clears
+basins at $A\geq 0.1$ and thins over-specialization $\sim3\times$ by
+$A{=}0.5$.}
+\label{fig:designc-taxonomy}
+\end{figure}
+
+The headline interaction is inseparable from a second, arguably more
+consequential finding: $\sigma_{\text{run}}[\textsc{R7}] /
+\sigma_{\text{run}}[\textsc{R4}] \approx 3$ (log-odds; CrIs
+non-overlapping, Table~\ref{tab:designc-confirm}) --- \textbf{dense
+shaping trades mean for variance}, turning the random seed into a
+lottery over policy quality (gauntlet range $0.27$--$1.00$ across
+\textsc{R7} seeds vs.\ $0.20$--$0.43$ for \textsc{R4}).
+Classifying every run by (panel, own-hider) win rate
+(Figure~\ref{fig:designc-taxonomy}) resolves the lottery into two
+discrete failure modes with different dose-response to $A$:
+\textsc{R4} fails by \emph{basin} (14/20 runs never learn; no zoo dose
+rescues them --- $\beta_A\approx0$), while \textsc{R7} fails mostly by
+\emph{over-specialization} (6/20 at $A{=}0$).
+An $A$-dose sweep ($A\in\{0,0.05,0.1,0.25,0.5\}$) shows basins vanish
+by $A\geq0.1$ while over-specialization shrinks monotonically but
+retains a tail ($2/20$ even at $A{=}0.5$): a small zoo dose breaks the
+never-learn equilibrium; un-narrowing an already-specialized policy
+takes sustained opponent diversity.
+Checkpoint diagnostics rule out forgetting: a permutation-null test
+finds $0/29$ runs with above-null forgetting regret --- failed runs
+learn the wrong thing or nothing, they do not lose what they had.
+
+Ablating individual \textsc{R7} terms at $A{=}0$ implicates the
+shaping terms themselves as the variance source: removing the
+area-coverage bonus yields $15/15$ healthy runs (cell mean $0.82$,
+the best of any cell), and removing both coverage and urgency
+collapses between-run $\sigma$ from $1.7$--$2.1$ to $0.95$.
+
+\subsection{Deconfound: the effects live in the seeker's reward}
+\label{sec:designc-deconfound}
+
+Because seeker and hider co-train in one run, the ``reward'' factor
+above changes \emph{both} roles' rewards --- every
+\textsc{R4}-vs-\textsc{R7} contrast is also an opponent-quality
+contrast, and a skeptic can attribute both headline effects to the
+opponent: a stale sparse-reward zoo hider is a useless curriculum.
+Mixed-reward control cells break the collinearity:
+\textsc{R7sk-R4hd} keeps \textsc{R7}'s seeker-side terms (coverage
+excluded) while the hider receives exactly \textsc{R4}'s terminal-only
+reward ($A\in\{0,0.5\}\times10$ seeds).
+Against the \emph{same sparse hider}, seeker-side shaping alone
+reproduces the main effect ($+1.94$ $[+0.81,+3.21]$, certified), the
+interaction's direction and magnitude ($+1.48$ $[-0.21,+3.20]$,
+$P{=}0.96$ at $n{=}10$/cell), and the variance inflation
+($\sigma_{\text{run}}=1.95$ vs.\ $0.66$); toggling \emph{hider-side}
+shaping at fixed seeker shaping produces no interaction ($-0.02$
+$[-2.35,+2.32]$) and identical $\sigma_{\text{run}}$.
+\textbf{Complementarity and the seed lottery are properties of the
+agent's own reward, not of its opponent's competence.}
+One refinement emerges: over-specialization re-appears \emph{without}
+the coverage bonus when the hider is sparse ($3/10$) --- partner
+narrowness enables over-fitting; coverage amplifies it.
+
+\subsection{Mechanism: exploration variance, not strategic diversity}
+\label{sec:designc-mechanism}
+
+Two mechanisms could produce \textsc{R7}'s wide quality distribution:
+rich reward admits \emph{multiple distinct strong strategies}
+(strategic diversity), or a single strong strategy that only some
+seeds \emph{find} (exploration variance).
+We pre-declared a discriminating test: behavioral fingerprints (six
+role-correct trajectory features vs.\ the 4-anchor panel, PCA) either
+align with the outcome skill axis (exploration variance) or cluster
+away from it (strategic diversity).
+The result is unambiguous:
+$|\mathrm{corr}(\text{behavior PC1}, \text{SVD } U_1)| = 0.81$,
+above the pre-declared $0.7$ bar --- strong seekers occupy one region
+of behavior space, and the lottery is over \emph{finding} it.
+Consistent with this, the cross-pool win matrix is dominated by a
+single transitive axis (61\% of centered variance) with low-energy
+cyclic residuals --- the ``weakly non-transitive'' spinning-top regime
+\cite{czarnecki2020spinning}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\columnwidth]{figures/design_c_behavior_svd.png}
+\caption{Behavioral fingerprint PC1 vs.\ outcome SVD $U_1$ across the
+32-policy pool ($|r|=0.81$, left; PC2 vs.\ $U_2$, right). Behavior
+aligns with the skill axis: the dense-reward seed lottery is
+exploration variance over one strong strategy, not a portfolio of
+distinct strategies.}
+\label{fig:designc-behavior}
+\end{figure}
+
+\subsection{Robustness, errata, and disclosure}
+\label{sec:designc-robust}
+
+An adversarial code-and-methods review of this study (three
+independent audit passes) found and we disclose: (i) the gauntlet's
+adaptive episode-escalation thresholds were mathematically
+unreachable, so all matchups uniformly ran 100 episodes --- benign
+(the unweighted per-episode models assume exactly this) but the
+methods claim was corrected; (ii) a GAE done-mask off-by-one
+\cite{schulman2016gae} affected \emph{all} runs equally --- same-seed
+reruns with the corrected estimator reproduce the gap and the
+variance (bug immaterial); (iii) two early refine rounds deviated
+from the pre-registered schedule and the heteroscedastic
+$\sigma_{\text{run}}$ term was a post-hoc addition --- the v3
+extension re-certified the interaction under a properly frozen,
+fixed-$n$ protocol, and the variance finding replicated out-of-sample
+on new seeds and a second evaluation population; (iv) a role-indexing
+bug invalidated early behavioral features --- all behavioral results
+above use the corrected pipeline.
+Variational-Bayes intervals were $10$--$12\times$ narrower than NUTS
+on the same models and would have flipped one verdict; only NUTS
+intervals support claims.
+The failure taxonomy is not an artifact of the speed ratio: at
+HSM $\in\{1.05, 1.20\}$ collapse persists and scales monotonically
+with hider speed ($0.74/0.63/0.57$ cross win rate; $1/8$, $3/8$,
+$5/8$ runs below $0.5$).
+SAC could not be included: under default hyperparameters in this zoo
+protocol both SAC pilots collapsed (peak $55\%\to14\%$;
+$29\%\to8.7\%$ by 10M steps, entropy temperature $\to0.001$),
+tripping the pre-registered HP-BROKEN gate; the algorithm-asymmetry
+question remains open (cf.\ Section~\ref{sec:dominance}).
+
+\paragraph{Practical guidance.}
+For self-play practitioners: (1) shaping and opponent diversity are
+not interchangeable --- budget for both, because shaping without
+diversity buys a seed lottery and diversity without shaping buys
+nothing; (2) evaluate against populations, never against the training
+partner or any single opponent; (3) a small zoo dose ($A\approx0.1$)
+is enough to eliminate never-learn basins, but over-specialization
+needs sustained diversity; (4) audit both-roles reward terms
+(coverage-style bonuses) first --- they are over-specialization traps.
+
+% ============================================================
 \section{Corner Camping and Environment Geometry}
 \label{sec:geometry}
 % ============================================================
@@ -143,6 +390,13 @@ These findings invert the primacy bias narrative: in competitive settings, early
 % Why continued training degrades features: distribution shift from arms race
 % Practical implications: always auto-tune, don't transfer specific alpha values
 % Limitations: 2 environments, 2-layer MLPs
+% RECONCILE (sec:designc): SAC dominates the cross-method gauntlet
+%   (sec:dominance) yet collapses under default HPs in the zoo protocol
+%   (Design C pilots, HP-BROKEN). Different protocols/HP regimes —
+%   spell out which, or a reviewer will read it as a contradiction.
+% Also connect: Design C's exploration-variance mechanism vs the
+%   entropy-bootstrapping story (both are about early exploration
+%   determining final strength — one via alpha, one via shaping).
 
 \textbf{TODO: Write discussion.}
 
